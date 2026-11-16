@@ -1,0 +1,23 @@
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+type Target = { zone: string; point?: { lateral: number; depth: number } };
+type Step = Target & (
+  { family: string; spin: string; strength: string; position?: number } |
+  { tech: string; label?: string }
+);
+
+export const routines = sqliteTable("routines", {
+  id: text("id").primaryKey(),
+  owner: text("owner").notNull(),
+  title: text("title").notNull(),
+  mode: text("mode", { enum: ["serve", "receive"] }).notNull(),
+  hand: text("hand", { enum: ["right", "left"] }).notNull(),
+  myHand: text("my_hand", { enum: ["right", "left"] }).notNull().default("right"),
+  steps: text("steps", { mode: "json" }).$type<Step[]>().notNull(),
+  note: text("note").notNull(),
+  status: text("status", { enum: ["using", "practice"] }).notNull(),
+  revision: integer("revision").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  index("routines_owner_updated").on(table.owner, table.updatedAt),
+]);

@@ -13,7 +13,6 @@ import {
 import { analyze, secondBounceDescription, spinDescription } from "../lib/table-tennis/physics.mjs"
 import { findIdeas, incomingIntentLabel, optionsFor } from "../lib/table-tennis/tactics.mjs"
 import Court, { NumberBadge } from "./court"
-import { routineStore } from "./routine-store.mjs"
 
 const blankDraft = () => ({
   setup: { family: "", spin: "", zone: "", strength: "medium", position: DEFAULT_POSITION },
@@ -40,6 +39,19 @@ const refs = [
   ["Table Tennis Scotland", "接发球训练卡", "https://tabletennisscotland.co.uk/wp-content/uploads/2025/04/TTS-Snap-Cards-A4-Improving-Service-Return-print-at-home.pdf"],
   ["Larry Hodges · Butterfly", "不同旋转与长短的接发", "https://butterflyonline.com/how-to-return-different-serves/"],
 ]
+
+async function cloud(method = "GET", body) {
+  const response = await fetch("/api/routines", {
+    method,
+    cache: "no-store",
+    ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || (method === "GET" && !Array.isArray(payload.items))) {
+    throw new Error(payload.error || "暂时无法同步，请稍后重试。")
+  }
+  return payload
+}
 
 function Select({ children, ...props }) {
   return <div className="select-frame">
@@ -194,7 +206,7 @@ function RoutineLibrary({ records, pending, error, reload, open, onDelete, onSta
 
   return <main className="main-frame library-view">
     <div className="page-heading">
-      <div><h1>套路库</h1><p>套路保存在当前浏览器。</p></div>
+      <div><h1>套路库</h1><p>查看你保存的发球、接发和后续分支。</p></div>
       <button className="button outline" type="button" onClick={reload} disabled={pending}><RefreshCw size={16} />刷新</button>
     </div>
     <div className="library-controls">
@@ -338,7 +350,7 @@ export default function Workbench() {
   const [dialog, setDialog] = useState(null)
   const [records, setRecords] = useState([])
   const [pending, setPending] = useState(false)
-  const [storageError, setStorageError] = useState("")
+  const [cloudError, setCloudError] = useState("")
   const [dialogError, setDialogError] = useState("")
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
@@ -357,13 +369,13 @@ export default function Workbench() {
     const index = ++sequence.current
     setPending(true)
     try {
-      const { items } = await routineStore()
+      const { items } = await cloud()
       if (index === sequence.current) {
         setRecords(items)
-        setStorageError("")
+        setCloudError("")
       }
     } catch (error) {
-      if (index === sequence.current) setStorageError(error.message)
+      if (index === sequence.current) setCloudError(error.message)
     } finally {
       if (index === sequence.current) setPending(false)
     }
@@ -455,11 +467,11 @@ export default function Workbench() {
       const { saved, steps } = draft
       const payload = { ...form, mode, ...hands, steps, id: updateExisting ? saved.id : id.current,
         ...(updateExisting ? { revision: saved.revision } : {}) }
-      const { item } = await routineStore(updateExisting ? "PUT" : "POST", payload)
+      const { item } = await cloud(updateExisting ? "PUT" : "POST", payload)
       sequence.current++
       setPending(false)
       setRecords(previous => [item, ...previous.filter(record => record.id !== item.id)])
-      setStorageError("")
+      setCloudError("")
       update(previous => ({ ...previous, saved: item }))
       setDialog(null)
       setMessage("套路已保存")
@@ -483,7 +495,7 @@ export default function Workbench() {
     setBusy(true)
     setDialogError("")
     try {
-      await routineStore("DELETE", { id: item.id, revision: item.revision })
+      await cloud("DELETE", { id: item.id, revision: item.revision })
       sequence.current++
       setPending(false)
       setRecords(previous => previous.filter(record => record.id !== item.id))
@@ -502,7 +514,7 @@ export default function Workbench() {
   return <>
     <header className="top-bar">
       <div className="top-inner">
-        <div className="brand"><img src={import.meta.env.BASE_URL + "court.png"} width="29" height="29" alt="" /><span>乒乓球发接发技战术分析平台</span></div>
+        <div className="brand"><img src="/court.png" width="29" height="29" alt="" /><span>乒乓球发接发技战术分析平台</span></div>
         <nav className="primary-nav" aria-label="分析模式">
           {Object.entries(modeNames).map(([id, name]) =>
             <button key={id} type="button" aria-current={page === id ? "page" : undefined} onClick={() => changePage(id)}>{name}</button>)}
@@ -512,7 +524,7 @@ export default function Workbench() {
       </div>
     </header>
 
-    {page === "library" ? <RoutineLibrary records={records} pending={pending} error={storageError} reload={refresh}
+    {page === "library" ? <RoutineLibrary records={records} pending={pending} error={cloudError} reload={refresh}
       open={open} onDelete={item => { setDialogError(""); setDialog({ type: "delete", item }) }} onStart={() => changePage(mode)} /> :
       <main className="main-frame">
         <div className="page-heading">

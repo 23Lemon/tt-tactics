@@ -1,0 +1,1 @@
+ALTER TABLE `routines` ADD `my_hand` text DEFAULT 'right' NOT NULL;
