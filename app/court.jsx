@@ -251,7 +251,7 @@ export default function Court({
   }
 
   const deviation = comparePlacement(selected, shot.zone)
-  const outcome = selected?.status === "unavailable" ? "当前接法不适用" : selected?.status === "out" ? "预计出界" :
+  const outcome = selected?.status === "unresolved" ? "请微调线路" : selected?.status === "unavailable" ? "当前接法不适用" : selected?.status === "out" ? "预计出界" :
     selected?.status === "net" ? "预计下网" :
     selected?.valid ? zoneName(selected.zone) : "这一板前已失误"
   const focusActor = shotActor(mode, focus)
@@ -280,6 +280,6 @@ export default function Court({
       {focus > 0 && original?.valid && <details className="disclosure court-details"><summary>查看触球对比<ChevronDown size={14} /></summary><div className="read-toggle" role="group" aria-label="拍形对比">
         <button type="button" aria-pressed={adjustment === "read"} onClick={() => setAdjustment("read")}>正确处理</button><button type="button" aria-pressed={adjustment === "fixed"} onClick={() => setAdjustment("fixed")}>{compensateSide ? "未补侧旋" : "当不转接"}</button></div>
         <p>{selected?.valid ? spinDescription(selected) + " · " + netLabel : "预计失误"}{deviation ? " · " + deviation : ""}</p><p className="muted">下一板建议始终按正确处理计算。色晕仅表示触球扰动的示意。</p></details>}
-      {selected?.status === "unavailable" && <p className="notice error">{selected.issue}</p>}</div>}
+      {["unavailable", "unresolved"].includes(selected?.status) && <p className="notice error">{selected.issue}</p>}</div>}
   </section>
 }
