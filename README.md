@@ -1,8 +1,28 @@
 # 乒乓球发接发技战术分析平台
 
-这个分支维护 ChatGPT Site 的完整版源码，包含登录后的套路库 API、数据库结构和球路分析。生产环境使用现有站点的存储绑定。
+源码维护在 GitHub `main`，网站发布到现有 ChatGPT Site。套路数据保存在 Site 的 D1 数据库，按登录用户隔离；GitHub 不保存用户套路。
 
-修改在此分支提交。发布时从 GitHub 取出已确认的提交，同步到现有 Site 的发布仓库，保留该站点的托管配置，再构建并发布。`app/` 是应用入口，`app/api/routines/` 是套路库接口，`drizzle/` 是数据库迁移。发布前可运行 `node --test lib/table-tennis/tactics.test.mjs`。
+## 使用与结构
+
+每次只编辑一板。选择发球、旋转和落点后点“继续”，再选择接法及第三板／第四板。手机可展开球台精调落点。球速、旋转强度和站位在折叠设置中。
+
+- `app/workbench.jsx`：分步编辑、套路库与云端同步。
+- `app/court.jsx`：连续落点、球路与二跳显示。
+- `lib/table-tennis/`：技术目录、物理近似与推荐规则。
+- `app/api/routines/`：用户隔离、版本冲突检测和输入校验。
+- `drizzle/`：已有数据库迁移；本次升级不改数据库结构。
+
+发布时将 GitHub 的确定提交同步到现有 Site 发布仓库，保留 Site 的托管配置，再构建、打包并部署。两处源码应一致；不存在自动发布钩子。
+
+## 验证
+
+```sh
+node --test lib/table-tennis/*.test.mjs
+node lib/table-tennis/scenario-audit.mjs
+npm run build
+```
+
+[推荐逻辑、物理假设与参考依据](docs/model-and-design.md)。
 
 ---
 

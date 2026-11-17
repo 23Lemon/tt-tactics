@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { ArrowDown, Play, Target } from "lucide-react"
+import { ChevronDown, Maximize2, Minimize2, Play, Target } from "lucide-react"
 import { forehand, handName, other, playerHand, pointZone, shotActor, shotName, snapPoint, zoneName } from "../lib/table-tennis/catalog.mjs"
 import { COURT, clearanceDescription, secondBounceDescription, serveOrigin, spinDescription, targetPoint } from "../lib/table-tennis/physics.mjs"
 import { comparePlacement } from "../lib/table-tennis/tactics.mjs"
@@ -141,13 +141,20 @@ const getLabel = (side, hands, length, column) => {
 }
 
 export default function Court({
-  mode, hands, active, setup, steps, focus, readResults, visibleResults, adjustment, setAdjustment, setZone,
+  mode, hands, active, setup, steps, focus, readResults, visibleResults, adjustment, setAdjustment, setZone, editable = true, expanded = false, setExpanded,
 }) {
   const field = useRef(null)
   const stage = useRef(null)
   const canvas = useRef(null)
   const animation = useRef(null)
   const [playing, setPlaying] = useState(false)
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 720px)")
+    const change = () => setCompact(media.matches)
+    change(); media.addEventListener("change", change)
+    return () => media.removeEventListener("change", change)
+  }, [])
   const selectActor = other(shotActor(mode, focus))
   const selected = visibleResults[focus]
   const original = readResults[focus]
@@ -212,6 +219,7 @@ export default function Court({
     if (animation.current) window.cancelAnimationFrame(animation.current)
     const points = visibleResults.flatMap(ball => ball?.points ?? [])
     if (!points.length) return
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { paint(); return }
     const duration = Math.max(1100, points.length * 9)
     const started = window.performance.now()
     setPlaying(true)
@@ -230,6 +238,7 @@ export default function Court({
   }
 
   function aimAt(event, zone) {
+    if (!editable) return
     if (event.detail === 0) {
       setZone(focus, zone)
       return
@@ -242,7 +251,7 @@ export default function Court({
   }
 
   const deviation = comparePlacement(selected, shot.zone)
-  const outcome = selected?.status === "out" ? "预计出界" :
+  const outcome = selected?.status === "unavailable" ? "当前接法不适用" : selected?.status === "out" ? "预计出界" :
     selected?.status === "net" ? "预计下网" :
     selected?.valid ? zoneName(selected.zone) : "这一板前已失误"
   const focusActor = shotActor(mode, focus)
@@ -251,65 +260,26 @@ export default function Court({
   const netLabel = clearance === "贴网" ? "贴网" : "过网" + clearance
   const bounceLabel = selected?.valid ? secondBounceDescription(selected) : ""
 
-  return <section className="panel court-panel" aria-label="球台和球路">
-    <header className="panel-heading">
-      <h2>球台</h2>
-      <button className="button subtle compact" type="button" onClick={replay} disabled={playing || !visibleResults.some(result => result?.points.length)}>
-        <Play size={15} />{playing ? "播放中" : "重播球路"}
-      </button>
-    </header>
-
-    <div className="stage" ref={stage}>
-      <div className="end-label far"><span />对手<span className="end-hand">{handName(playerHand("opponent", hands))}</span></div>
-      <div className="court" ref={field}>
-        {zones.map(([side, length]) => <div className="court-row" key={side + length}>
-          {[0, 1, 2].map(column => {
-            const zone = getLabel(side, hands, length, column)
-            const active = selectActor === side && shot.zone === zone
-            const name = zoneName(zone)
-            const className = "court-zone" + (active ? " aimed" : "")
-            return selectActor === side ? <button type="button" key={zone} className={className}
-              aria-label={(side === "me" ? "我方" : "对手") + name}
-              aria-pressed={active} onClick={event => aimAt(event, zone)}>
-              <span>{name}</span>
-            </button> : <div key={zone} className={className}><span>{name}</span></div>
-          })}
-        </div>)}
-        <div className="net" aria-hidden="true" />
-      </div>
-      <div className="end-label near"><span />我方<span className="end-hand">{handName(playerHand("me", hands))}</span></div>
-      <canvas ref={canvas} className="court-canvas" aria-hidden="true" />
-    </div>
-
-    <div className="court-pick">
-      <p className="court-help"><Target size={15} />点{selectActor === "me" ? "我方" : "对手"}半台的任意位置，选第 {focus + 1} 板落点</p>
-      {shot.point && <button className="button subtle compact" type="button" onClick={() => setZone(focus, shot.zone)}>恢复分区默认点</button>}
-    </div>
-    {steps.length > 0 && <div className="ball-readout">
-      <div className="readout-heading">
-        <NumberBadge index={focus} />
-        <strong>{shotName(shot, focusActor, hands)}</strong>
-        {focus > 0 && original?.valid && <div className="read-toggle" aria-label="拍形对比">
-          <button type="button" aria-pressed={adjustment === "read"} onClick={() => setAdjustment("read")}>正确处理</button>
-          <button type="button" aria-pressed={adjustment === "fixed"} onClick={() => setAdjustment("fixed")}>{compensateSide ? "未补侧旋" : "当不转接"}</button>
-        </div>}
-      </div>
-      <div className="readout-values">
-        <span className={selected?.valid ? "" : "bad-outcome"}>{outcome}</span>
-        {selected?.valid && <>
-          <span>{spinDescription(selected)}</span>
-          {bounceLabel && <span>{bounceLabel}</span>}
-          <span>{netLabel}</span>
-          {focus === 0 && <span>落台约 {selected.pace.toFixed(1)} m/s</span>}
-          {deviation && <span>{deviation}</span>}
-        </>}
-      </div>
-      {focus > 0 && (selected?.spread?.length > 1 || adjustment === "fixed") &&
-        <p className="readout-help">{adjustment === "fixed" ? (compensateSide ? "这条球路只按上、下旋调拍。下一板建议按「正确处理」计算。" : "这条球路模拟用接不转球的拍形来接。下一板建议按「正确处理」计算。") :
-          "色晕表示不同触球下的落点范围。"}</p>}
-    </div>}
-    {selected?.valid && <a className="button outline court-next" href="#decisions">
-      {steps[active] ? "查看第 " : "选第 "}{active + 1} 板<ArrowDown size={15} />
-    </a>}
+  return <section className={"court-panel" + (expanded ? " is-expanded" : "")} aria-label="球台和球路">
+    <header className="court-toolbar"><span>{steps[focus] ? "第 " + (focus + 1) + " 板球路" : "球台"}</span><div>
+      <button className="button icon subtle" type="button" onClick={replay} aria-label="重播球路" title="重播球路" disabled={playing || !visibleResults.some(r => r?.points?.length)}><Play size={17} /></button>
+      <button className="button icon subtle expand-court" type="button" onClick={() => setExpanded(!expanded)} aria-label={expanded ? "收起球台" : "展开球台调整落点"}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button></div></header>
+    <div className="stage" ref={stage}><div className="end-label far">对手<span className="end-hand">{handName(playerHand("opponent", hands))}</span></div>
+      <div className="court" ref={field}>{zones.map(([side, length]) => <div className="court-row" key={side + length}>{[0, 1, 2].map(column => {
+        const zone = getLabel(side, hands, length, column), aimed = selectActor === side && shot.zone === zone, name = zoneName(zone)
+        const className = "court-zone" + (aimed ? " aimed" : "")
+        return editable && selectActor === side && (!compact || expanded) ? <button type="button" key={zone} className={className} aria-label={(side === "me" ? "我方" : "对手") + name}
+          aria-pressed={aimed} onClick={event => aimAt(event, zone)}><span>{name}</span></button> : <div key={zone} className={className}><span>{name}</span></div>
+      })}</div>)}<div className="net" aria-hidden="true" /></div>
+      <div className="end-label near">我方<span className="end-hand">{handName(playerHand("me", hands))}</span></div><canvas ref={canvas} className="court-canvas" aria-hidden="true" />
+      {!expanded && <button className="mini-court-overlay" type="button" aria-label="展开球台调整落点" onClick={() => setExpanded(true)} />}</div>
+    <div className="court-pick"><p className="court-help"><Target size={14} />{editable ? "点球台，微调落点" : active === 0 ? "选择发球后查看球路" : "先选接法，再调整落点"}</p>
+      {shot.point && editable && <button className="text-button" type="button" onClick={() => setZone(focus, shot.zone)}>复位</button>}</div>
+    {steps.length > 0 && <div className="ball-readout" aria-live="polite"><div className="readout-heading"><NumberBadge index={focus} /><strong>{shotName(shot, focusActor, hands)}</strong></div>
+      <div className="readout-values"><span className={selected?.valid ? "" : "bad-outcome"}>{selected?.valid ? "第一落点 · " + outcome : outcome}</span>{selected?.valid && <span>{bounceLabel}</span>}</div>
+      {focus > 0 && original?.valid && <details className="disclosure court-details"><summary>查看触球对比<ChevronDown size={14} /></summary><div className="read-toggle" role="group" aria-label="拍形对比">
+        <button type="button" aria-pressed={adjustment === "read"} onClick={() => setAdjustment("read")}>正确处理</button><button type="button" aria-pressed={adjustment === "fixed"} onClick={() => setAdjustment("fixed")}>{compensateSide ? "未补侧旋" : "当不转接"}</button></div>
+        <p>{selected?.valid ? spinDescription(selected) + " · " + netLabel : "预计失误"}{deviation ? " · " + deviation : ""}</p><p className="muted">下一板建议始终按正确处理计算。色晕仅表示触球扰动的示意。</p></details>}
+      {selected?.status === "unavailable" && <p className="notice error">{selected.issue}</p>}</div>}
   </section>
 }
