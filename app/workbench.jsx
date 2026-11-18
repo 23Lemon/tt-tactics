@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, Bookmark, Check, ChevronDown, Compass, Info,
   Library, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, Share2, Folder, Map as MapIcon } from "lucide-react"
-import { DEFAULT_POSITION, PACES, SERVES, SERVE_DISTANCE, SERVE_POSITION_LIMITS, STARTING_POSITIONS, STRENGTHS, STROKES, STROKE_GROUPS, ZONES,
+import { contactSetbackCm, storedServeDistance, DEFAULT_POSITION, PACES, SERVES, SERVE_DISTANCE, SERVE_POSITION_LIMITS, STARTING_POSITIONS, STRENGTHS, STROKES, STROKE_GROUPS, ZONES,
   handName, openingKey, patternKey, playerHand, servePositionName, serveSpinName, shotActor, shotName, zoneName,
 } from "../lib/table-tennis/catalog.mjs"
 import { analyze, secondBounceDescription, spinDescription } from "../lib/table-tennis/physics.mjs"
@@ -60,10 +60,10 @@ function ServeControls({ mode, draft, onChange }) {
       {serve.spin !== "dead" && <div className="setting-row"><span>旋转强度</span><Segments values={STRENGTHS} value={serve.strength} set={strength => onChange({ strength })} label="旋转强度" /></div>}
       <div className="setting-row"><span>球速</span><Segments values={PACES} value={serve.pace ?? "normal"} set={pace => onChange({ pace })} label="发球球速" /></div>
       <PositionControl value={serve.position} set={position => onChange({ position })} />
-      <div className="distance-control"><div className="setting-row"><label htmlFor="serve-distance">站位离台</label><strong>{serve.distance ?? SERVE_DISTANCE.default} 厘米</strong></div>
-        <input id="serve-distance" className="position-range" type="range" min={SERVE_DISTANCE.min} max={SERVE_DISTANCE.max} step={1}
-          value={serve.distance ?? SERVE_DISTANCE.default} aria-valuetext={(serve.distance ?? SERVE_DISTANCE.default) + " 厘米"} aria-describedby="distance-help" onChange={e => onChange({ distance: Number(e.target.value) })}/>
-        <div className="distance-scale"><span>{SERVE_DISTANCE.min} 厘米</span><span>{SERVE_DISTANCE.max} 厘米</span></div><p id="distance-help">以前脚尖到端线计，默认 {SERVE_DISTANCE.default} 厘米。</p></div>
+      <div className="distance-control"><div className="setting-row"><label htmlFor="serve-distance">触球点距端线</label><strong>{contactSetbackCm(serve.distance)} 厘米</strong></div>
+        <input id="serve-distance" className="position-range" type="range" min={contactSetbackCm(SERVE_DISTANCE.min)} max={contactSetbackCm(SERVE_DISTANCE.max)} step={1}
+          value={contactSetbackCm(serve.distance)} aria-valuetext={contactSetbackCm(serve.distance) + " 厘米"} aria-describedby="distance-help" onChange={e => onChange({ distance: storedServeDistance(Number(e.target.value)) })}/>
+        <div className="distance-scale"><span>{contactSetbackCm(SERVE_DISTANCE.min)} 厘米</span><span>{contactSetbackCm(SERVE_DISTANCE.max)} 厘米</span></div><p id="distance-help">从球心量到端线，取水平方向。默认 {contactSetbackCm()} 厘米。</p></div>
       </div></details>}
   </div>
 }

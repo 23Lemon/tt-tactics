@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Bookmark, Check, ChevronDown, ChevronUp, Compass, Crosshair, Info, Library, RotateCcw, Settings2, UserRound, X } from 'lucide-react'
-import { SERVE_DISTANCE, SERVE_POSITION_LIMITS, STROKE_GROUPS, handName, servePositionName, serveSpinName, shotName, zoneName } from '../lib/table-tennis/catalog.mjs'
+import { contactSetbackCm, storedServeDistance, SERVE_DISTANCE, SERVE_POSITION_LIMITS, STROKE_GROUPS, handName, servePositionName, serveSpinName, shotName, zoneName } from '../lib/table-tennis/catalog.mjs'
 import { COURT, serveOrigin, secondBounceDescription, spinDescription } from '../lib/table-tennis/physics.mjs'
 import { assessStroke, techniqueDescription } from '../lib/table-tennis/tactics.mjs'
 import { receiveGroups } from '../lib/table-tennis/repertoire.mjs'
@@ -50,18 +50,28 @@ function RallyFlight({ ball, receiver }) {
   </g>
 }
 
-function StancePreview({ draft }) {
+function StancePreview({ draft, ball }) {
   const actor = actorAt(draft, 0)
   const [x, y] = positionOnTable(serveOrigin(draft.setup, actor, draft))
-  return <div className="rally-destination stance-preview" role="img" aria-label={roleName(actor) + '发球站位，' + servePositionName(draft.setup.position) + '，离台' + draft.setup.distance + '厘米'}>
-    <svg viewBox="-145 -12 290 126" className="half-table-svg" aria-hidden="true">
-      <rect x="-104" y="4" width="208" height="92" rx="1" fill="#214c3b"/>
-      <path d="M-104 50H104 M0 2V98" stroke="#e3efe5" fill="none"/>
-      <path d={`M${x} ${y}H${actor === 'me' ? -104 : 104}`} stroke="#bd762a" strokeDasharray="2 1"/>
-      <circle cx={x} cy={y} r="5" fill="#e7a642" stroke="#594224" strokeWidth="1.5"/>
+  const edge = actor === 'me' ? -104 : 104
+  const distance = contactSetbackCm(draft.setup.distance)
+  const track = ball?.points?.map(state => positionOnTable(state.p)) ?? []
+  const bounce = ball?.serviceBounce && positionOnTable(ball.serviceBounce)
+  const landing = ball?.valid && ball.landing && positionOnTable(ball.landing)
+  const marker = 'stance' + useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  return <div className="stance-overlay" role="img" aria-label={roleName(actor) + '触球点在端线后' + distance + '厘米，' + servePositionName(draft.setup.position)}>
+    <svg viewBox="-131 -8 262 115" aria-hidden="true">
+      <defs><marker id={marker} viewBox="0 0 8 8" refX="6" refY="4" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#ffda93"/></marker></defs>
+      <rect x="-104" y="4" width="208" height="92" rx="1" fill="#264b3a"/>
+      <path d="M-104 50H104 M-52 4V96 M52 4V96" fill="none" stroke="#789a85" strokeWidth=".6" strokeDasharray="2 2"/>
+      <path d="M0 2V98" stroke="#d4e4d9" strokeWidth="1.4"/>
+      {track.length > 1 && <polyline points={track.join(' ')} fill="none" stroke="#ffda93" strokeWidth="1.4" markerEnd={'url(#' + marker + ')'}/>}
+      {bounce && <circle cx={bounce[0]} cy={bounce[1]} r="1.9" fill="#ffda93"/>}
+      {landing && <circle cx={landing[0]} cy={landing[1]} r="2.6" stroke="#ffda93" fill="#264b3a"/>}
+      <path d={`M${edge} ${y}H${x}`} stroke="#8f733a" strokeWidth="1.4" strokeDasharray="1.5 1"/>
+      <circle cx={x} cy={y} r="3.7" fill="#f9b957" stroke="#324338" strokeWidth="1.1"/>
     </svg>
-    <strong>{roleName(actor)} · {servePositionName(draft.setup.position)}</strong>
-    <small>击球位置示意 · 离台 {draft.setup.distance} 厘米</small>
+    <small>触球点 · {servePositionName(draft.setup.position)} · 端线后 {distance} 厘米</small>
   </div>
 }
 
@@ -111,6 +121,7 @@ function ServeEditor({ draft, onChange, part, setPart, setPreview }) {
   const expanded = part || (!setup.family ? 'family' : !setup.spin ? 'spin' : null)
   const previewEvents = {
     onPointerDown: event => { event.currentTarget.setPointerCapture(event.pointerId); setPreview(true) },
+    onPointerCancel: () => setPreview(false),
     onPointerUp: () => setPreview(false),
     onLostPointerCapture: () => setPreview(false),
     onKeyDown: event => { if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.key)) setPreview(true) },
@@ -128,7 +139,7 @@ function ServeEditor({ draft, onChange, part, setPart, setPreview }) {
       <label>球速<select aria-label="发球球速" value={setup.pace} onChange={event => onChange({ pace: event.target.value })}>{Object.entries(PACES).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
       {setup.spin !== 'dead' && <label>旋转强度<select aria-label="旋转强度" value={setup.strength} onChange={event => onChange({ strength: event.target.value })}>{Object.entries(STRENGTHS).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>}
       <label>横向站位 · {servePositionName(setup.position)}<input {...previewEvents} type="range" aria-label="发球横向站位" min={SERVE_POSITION_LIMITS.min} max={SERVE_POSITION_LIMITS.max} step=".01" value={Math.min(setup.position, SERVE_POSITION_LIMITS.max)} onChange={event => onChange({ position: Number(event.target.value) })} /></label>
-      <label>离台 {setup.distance} 厘米<input {...previewEvents} type="range" aria-label="发球离台距离" min={SERVE_DISTANCE.min} max={SERVE_DISTANCE.max} step="1" value={setup.distance} onChange={event => onChange({ distance: Number(event.target.value) })} /></label>
+      <label>触球点 · 端线后 {contactSetbackCm(setup.distance)} 厘米<input {...previewEvents} type="range" aria-label="触球点距端线的水平距离" aria-valuetext={contactSetbackCm(setup.distance) + " 厘米"} min={contactSetbackCm(SERVE_DISTANCE.min)} max={contactSetbackCm(SERVE_DISTANCE.max)} step="1" value={contactSetbackCm(setup.distance)} onChange={event => onChange({ distance: storedServeDistance(Number(event.target.value)) })} /></label>
     </div></details>}
   </>
 }
@@ -216,6 +227,12 @@ export default function RallyWorkbench() {
         const source = row.querySelector('.rally-card'), destination = row.querySelector('.rally-destination'), table = row.querySelector('.half-table-svg'), arrow = row.querySelector('.rally-arrow')
         if (!source || !destination || !table || !arrow) return
         const s = source.getBoundingClientRect(), d = destination.getBoundingClientRect(), t = table.getBoundingClientRect()
+        const range = source.querySelector('input[type="range"]')?.closest('label')
+        if (range && row.classList.contains('show-stance')) {
+          const top = source.querySelector('header').getBoundingClientRect().bottom - row.getBoundingClientRect().top
+          row.style.setProperty('--stance-top', top + 'px')
+          row.style.setProperty('--stance-height', Math.max(0, range.getBoundingClientRect().top - row.getBoundingClientRect().top - top - 6) + 'px')
+        }
         const tableCenter = t.top - d.top + t.height / 2
         const center = Math.max(s.height / 2, tableCenter)
         source.style.marginTop = `${center - s.height / 2}px`
@@ -227,7 +244,7 @@ export default function RallyWorkbench() {
     const observer = new ResizeObserver(align)
     observer.observe(rally.current)
     return () => observer.disconnect()
-  }, [draft, options, status.error])
+  }, [draft, options, status.error, stancePreview])
 
   const saveDraft = { mode, myHand: draft.myHand, hand: draft.hand, steps: buildSteps(draft), ...(draft.saved ? { id: draft.saved.id, revision: draft.saved.revision, title: draft.saved.title, note: draft.saved.note, category: draft.saved.category, status: draft.saved.status } : {}) }
   const focus = Math.max(0, Math.min(draft.active, draft.steps.length - 1))
@@ -245,7 +262,6 @@ export default function RallyWorkbench() {
     </section>
   }
   function destination(index) {
-    if (stancePreview && index === 0 && draft.active === 0) return <StancePreview draft={draft}/>
     return draft.steps[index] || index === draft.active ? <HalfTable draft={draft} index={index} ball={results[index]} choosingLanding={!index && draft.active === 0 && !!draft.setup.spin && !servePart && !draft.setup.zone} onPoint={point}/> : <div/> }
   return <div className="rally-app">
     <header className="rally-topbar"><div className="rally-brand"><img src="./favicon.svg" width="26" height="26" alt=""/><strong>套路分析</strong></div><button className="rally-library-button" type="button" onClick={() => setManager('library')}><Library size={17}/>套路库</button></header>
@@ -254,10 +270,11 @@ export default function RallyWorkbench() {
       <div className="rally-context-actions"><button type="button" onClick={showIdeas}><Compass size={14}/>找新套路</button><button type="button" disabled={!draft.steps.length} onClick={() => { setAdjustment('read'); setDialog('court') }}>球路详情<ArrowRight size={13}/></button></div>
       <section className="rally-sides" aria-label="双方持拍手"><button type="button" onClick={() => setDialog('players')}><span><UserRound size={18}/><strong>我方</strong></span><small>{handName(draft.myHand)}</small></button><span className="rally-net-label">球网</span><button type="button" onClick={() => setDialog('players')}><span><UserRound size={18}/><strong>对手</strong></span><small>{handName(draft.hand)}</small></button></section>
       <div className="rally-exchanges" ref={rally} aria-label="球网两侧的逐板选择">
-        {TRACKS[mode].map((_, index) => <div className={`rally-turn${index === draft.active ? ' current' : ''}`} key={`${mode}-${index}`}>
+        {TRACKS[mode].map((_, index) => <div className={`rally-turn${index === draft.active ? ' current' : ''}${stancePreview && !index && !draft.active ? ' show-stance' : ''}`} key={`${mode}-${index}`}>
           {actorAt(draft, index) === 'me' ? actionCard(index) : destination(index)}
           <div className="rally-arrow" aria-hidden="true">{(draft.steps[index] || index === draft.active) && (actorAt(draft, index) === 'me' ? <ArrowRight size={24}/> : <ArrowLeft size={24}/>)}</div>
           {actorAt(draft, index) === 'opponent' ? actionCard(index) : destination(index)}
+          {stancePreview && !index && !draft.active && <StancePreview draft={draft} ball={results[0]}/>}
         </div>)}
       </div>
       <footer className="rally-page-footer"><span>{draft.saved ? '正在编辑已存套路' : `${mode === 'serve' ? '三' : '四'}板衔接`}</span><button type="button" onClick={() => setDialog('about')}><Info size={13}/>关于推荐</button></footer>

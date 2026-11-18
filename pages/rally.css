@@ -32,7 +32,9 @@
 .rally-field-toggle[aria-expanded=true]{background:#e0eee5;border-color:#59866c;box-shadow:inset 3px 0 #30654a}
 .rally-field-toggle[aria-expanded=true]>span,.choosing-landing .half-zone-name{color:#245c42;font-weight:650}
 .choosing-landing .half-target{outline:2px solid #638f72;outline-offset:2px}
-.adjusting-stance .rally-field,.adjusting-stance .rally-card-heading,.adjusting-stance .rally-next{opacity:.38;filter:blur(1px)}
-.stance-preview{text-align:center;align-content:center;min-height:120px;color:#294c3b}
-.stance-preview svg{width:100%;height:auto}
-.stance-preview small{font-size:11px;color:#526358}
+/* The overlay occupies only the space above the stance sliders. */
+.show-stance .rally-destination,.show-stance .rally-arrow{visibility:hidden}
+.adjusting-stance .rally-field,.adjusting-stance .rally-disclosure summary,.adjusting-stance label:has(select){opacity:.14;filter:blur(3px)}
+.stance-overlay{position:absolute;z-index:4;inset-inline:0;top:var(--stance-top,46px);height:var(--stance-height,220px);display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;background:linear-gradient(180deg,transparent,#f7f9f4b8 12%,#f7f9f4c9 85%,transparent)}
+.stance-overlay svg{width:100%;min-height:0;max-height:calc(100% - 24px);display:block}
+.stance-overlay small{font-size:12px;color:#244935;background:#f6f8f3e8;border-radius:4px;padding:1px 6px}
