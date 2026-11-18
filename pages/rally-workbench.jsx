@@ -241,9 +241,13 @@ export default function RallyWorkbench() {
       })
     }
     align()
-    const observer = new ResizeObserver(align)
+    let frame
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(align)
+    })
     observer.observe(rally.current)
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
   }, [draft, options, status.error, stancePreview])
 
   const saveDraft = { mode, myHand: draft.myHand, hand: draft.hand, steps: buildSteps(draft), ...(draft.saved ? { id: draft.saved.id, revision: draft.saved.revision, title: draft.saved.title, note: draft.saved.note, category: draft.saved.category, status: draft.saved.status } : {}) }
