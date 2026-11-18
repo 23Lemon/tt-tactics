@@ -22,12 +22,21 @@ export function CategoryDialog({ item, categories, close, save, busy, error }) {
     <div className="modal-actions"><button disabled={busy} className="button primary">保存分类</button></div></form></Modal>
 }
 
-export function RepertoireDialog({ value, save, close }) {
-  const [picked, set] = useState(value)
+function RepertoireForm({ snapshot, busy, save, close }) {
+  const [picked, set] = useState(snapshot.groups)
   function toggle(key) { set(old => old.includes(key) ? old.filter(x => x !== key) : [...old, key]) }
-  return <Modal title="对手常用接法" close={close}><div className="modal-form"><p className="muted">勾选你在实战中常见的接法，只用于对方接你的发球。留空显示全部。</p>
-    <div className="repertoire-grid">{receiveGroups.map(([key, label]) => <label key={key}><input type="checkbox" checked={picked.includes(key)} onChange={() => toggle(key)}/>{label}</label>)}</div>
-    <div className="modal-actions"><button type="button" className="button outline" onClick={() => set([])}>恢复全部</button><button type="button" className="button primary" onClick={() => save(picked)}>应用</button></div></div></Modal>
+  return <div className="modal-form"><p className="muted">勾选球友用来接你发球的技术。留空时显示全部。</p>
+    <div className="repertoire-grid">{receiveGroups.map(([key, label]) => <label key={key}><input type="checkbox" checked={picked.includes(key)} disabled={busy} onChange={() => toggle(key)}/>{label}</label>)}</div>
+    <p className="sync-note">{snapshot.account ? "随当前 ChatGPT 账号同步。" : <>当前保存在此浏览器。<a href="/signin-with-chatgpt?return_to=/">登录 ChatGPT 同步</a></>}</p>
+    <div className="modal-actions"><button type="button" className="button outline" disabled={busy} onClick={() => set([])}>恢复全部</button><button type="button" className="button primary" disabled={busy} onClick={async () => { if (await save(snapshot, picked)) close() }}>{busy ? "保存中…" : "保存偏好"}</button></div></div>
+}
+export function RepertoireDialog({ preferences, close }) {
+  const { snapshot, busy, error, refresh, save } = preferences
+  return <Modal title="对手常用接法" close={close} busy={busy}>
+    {error && <p className="notice error" role="alert">{error} <button type="button" className="text-button" disabled={busy} onClick={refresh}>重新读取</button></p>}
+    {snapshot ? <RepertoireForm key={JSON.stringify([snapshot.account, snapshot.revision])} snapshot={snapshot} busy={busy} save={save} close={close}/> :
+      !error && <p role="status" className="muted">正在读取偏好…</p>}
+  </Modal>
 }
 
 export function ShareDialog({ item, close }) {

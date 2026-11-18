@@ -2,7 +2,7 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 type Target = { zone: string; point?: { lateral: number; depth: number } };
 type Step = Target & (
-  { family: string; spin: string; strength: string; position?: number } |
+  { family: string; spin: string; strength: string; position?: number; distance?: number; pace?: string } |
   { tech: string; label?: string }
 );
 
@@ -22,3 +22,9 @@ export const routines = sqliteTable("routines", {
 }, (table) => [
   index("routines_owner_updated").on(table.owner, table.updatedAt),
 ]);
+
+export const playerPreferences = sqliteTable("player_preferences", {
+  owner: text("owner").primaryKey(),
+  groups: text("receive_groups", { mode: "json" }).$type<string[]>().notNull(),
+  revision: integer("revision").notNull(),
+});

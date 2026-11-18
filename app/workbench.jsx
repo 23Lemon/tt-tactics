@@ -1,8 +1,8 @@
 "use client"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ArrowLeft, ArrowRight, ArrowUpRight, Bookmark, Check, ChevronDown, Compass, Info,
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, Bookmark, Check, ChevronDown, Compass, Info,
   Library, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, Share2, Folder, Map as MapIcon } from "lucide-react"
-import { DEFAULT_POSITION, PACES, SERVES, SERVE_POSITION_LIMITS, STARTING_POSITIONS, STRENGTHS, STROKES, STROKE_GROUPS, ZONES,
+import { DEFAULT_POSITION, PACES, SERVES, SERVE_DISTANCE, SERVE_POSITION_LIMITS, STARTING_POSITIONS, STRENGTHS, STROKES, STROKE_GROUPS, ZONES,
   handName, openingKey, patternKey, playerHand, servePositionName, serveSpinName, shotActor, shotName, zoneName,
 } from "../lib/table-tennis/catalog.mjs"
 import { analyze, secondBounceDescription, spinDescription } from "../lib/table-tennis/physics.mjs"
@@ -10,21 +10,24 @@ import { assessStroke, findIdeas, optionsFor, readIncoming, techniqueDescription
 import Court from "./court"
 import { Modal, RouteSummary } from "./routine-controls"
 import { ShareDialog, ImportDialog, CategoryField, CategoryDialog, RepertoireDialog } from "./routine-tools"
-import { receiveGroups } from "../lib/table-tennis/repertoire.mjs"
+import { usePreferences } from "./use-preferences"
 const blankDraft = (myHand = "right", hand = "right") => ({
-  setup: { family: "", spin: "", zone: "", strength: "medium", pace: "normal", position: DEFAULT_POSITION },
+  setup: { family: "", spin: "", zone: "", strength: "medium", pace: "normal", position: DEFAULT_POSITION, distance: SERVE_DISTANCE.default },
   steps: [], active: 0, myHand, hand, saved: null,
 })
 const defaults = () => ({ serve: blankDraft(), receive: blankDraft() })
 const modeNames = { serve: "我发球", receive: "我接发" }
 const statuses = { practice: "想练", using: "在用" }
 const tracks = { serve: ["我的发球", "对方接发", "我的第三板"], receive: ["对方发球", "我的接发", "对方第三板", "我的第四板"] }
-const refs = [
-  ["Table Tennis England", "长短球的接发选择", "https://newsarchive.tabletennisengland.co.uk/news/archived/return-of-serve/"],
-  ["Table Tennis Scotland", "接发球训练卡", "https://tabletennisscotland.co.uk/wp-content/uploads/2025/04/TTS-Snap-Cards-A4-Improving-Service-Return-print-at-home.pdf"],
-  ["乒乓世界", "反手顶撕与借力", "https://www.sohu.com/a/212647965_580074"],
-  ["乒乓世界", "反拉的空间与时机", "https://www.sohu.com/a/575998184_580074"],
-]
+const allReceives = []
+const smallScreen = "(max-width: 720px)"
+const isCompact = () => window.matchMedia(smallScreen).matches
+const desktopAtStartup = () => false
+function subscribeToScreen(listener) {
+  const media = window.matchMedia(smallScreen)
+  media.addEventListener("change", listener)
+  return () => media.removeEventListener("change", listener)
+}
 async function cloud(method = "GET", body) {
   const response = await fetch("/api/routines", { method, cache: "no-store", ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) })
   const payload = await response.json().catch(() => ({}))
@@ -53,10 +56,15 @@ function ServeControls({ mode, draft, onChange }) {
     {serve.family && <fieldset className="revealed"><legend>旋转</legend><div className="spin-picker">{SERVES[serve.family].spins.map(spin => <button type="button" key={spin} aria-pressed={serve.spin === spin}
       onClick={() => onChange({ spin })}>{serveSpinName({ ...serve, spin }, actor, draft)}</button>)}</div></fieldset>}
     {serve.spin && <fieldset className="revealed"><legend>落点</legend><ZonePicker value={serve.zone} onChange={zone => onChange({ zone, point: undefined })} /></fieldset>}
-    {serve.family && <details className="disclosure"><summary><SlidersHorizontal size={16} />旋转强度、球速与站位<ChevronDown size={15} /></summary><div className="settings-content">
+    {serve.family && <details className="disclosure"><summary><SlidersHorizontal size={16} />更多发球设置<ChevronDown size={15} /></summary><div className="settings-content">
       {serve.spin !== "dead" && <div className="setting-row"><span>旋转强度</span><Segments values={STRENGTHS} value={serve.strength} set={strength => onChange({ strength })} label="旋转强度" /></div>}
       <div className="setting-row"><span>球速</span><Segments values={PACES} value={serve.pace ?? "normal"} set={pace => onChange({ pace })} label="发球球速" /></div>
-      <PositionControl value={serve.position} set={position => onChange({ position })} /></div></details>}
+      <PositionControl value={serve.position} set={position => onChange({ position })} />
+      <div className="distance-control"><div className="setting-row"><label htmlFor="serve-distance">站位离台</label><strong>{serve.distance ?? SERVE_DISTANCE.default} 厘米</strong></div>
+        <input id="serve-distance" className="position-range" type="range" min={SERVE_DISTANCE.min} max={SERVE_DISTANCE.max} step={1}
+          value={serve.distance ?? SERVE_DISTANCE.default} aria-valuetext={(serve.distance ?? SERVE_DISTANCE.default) + " 厘米"} aria-describedby="distance-help" onChange={e => onChange({ distance: Number(e.target.value) })}/>
+        <div className="distance-scale"><span>{SERVE_DISTANCE.min} 厘米</span><span>{SERVE_DISTANCE.max} 厘米</span></div><p id="distance-help">以前脚尖到端线计，默认 {SERVE_DISTANCE.default} 厘米。</p></div>
+      </div></details>}
   </div>
 }
 function Incoming({ ball }) {
@@ -64,14 +72,14 @@ function Incoming({ ball }) {
   return <div className="incoming-strip"><span className="eyebrow">来球</span><strong>{zoneName(ball.zone)} · {spinDescription(ball)}</strong>
     <div><span>{secondBounceDescription(ball)}</span><span>{readIncoming(ball).pressure}</span></div></div>
 }
-function Decisions({ mode, draft, results, choose, onCustom, onZone, preferences, onPreferences }) {
+function Decisions({ mode, draft, results, choose, onCustom, onZone, preferences, preferenceStatus, onPreferences }) {
   const { steps, active } = draft, incoming = results[active - 1]
   const options = useMemo(() => optionsFor(incoming, draft, preferences), [incoming, draft.myHand, draft.hand, preferences])
   const [more, setMore] = useState(false), selected = steps[active]
   const selectedOption = options.find(x => x.tech === selected?.tech), assessment = selected && assessStroke(incoming, selected.tech)
-  return <><Incoming ball={incoming} />{mode === "serve" && active === 1 && <button type="button" className="text-button receive-filter" onClick={onPreferences}><SlidersHorizontal size={15}/>对手常用接法 · {preferences.length ? preferences.length + " 项" : "全部"}</button>}<div className="choices" role="group" aria-label="建议接法">
+  return <><Incoming ball={incoming} />{mode === "serve" && active === 1 && <button type="button" className="text-button receive-filter" onClick={onPreferences}><SlidersHorizontal size={15}/>对手常用接法 · {preferenceStatus || (preferences.length ? preferences.length + " 项" : "全部")}</button>}<div className="choices" role="group" aria-label="建议接法">
     {(more ? options : options.slice(0, 3)).map((option, index) => <button className="choice" aria-pressed={selected?.tech === option.tech} key={option.tech} type="button" onClick={() => choose(selected?.tech === option.tech ? selected : { tech: option.tech, zone: option.zone })}>
-      <span className="choice-copy"><strong>{STROKES[option.tech].name}</strong><small>{index === 0 && <b className="priority-tag">优先考虑</b>}{option.effort} · {zoneName(selected?.tech === option.tech ? selected.zone : option.zone)}{option.conditional ? " · 有条件" : ""}</small></span>
+      <span className="choice-copy"><strong>{STROKES[option.tech].name}</strong><small>{index === 0 && <b className="priority-tag">{shotActor(mode, active) === "opponent" ? "优先预判" : "优先考虑"}</b>}{option.effort} · {zoneName(selected?.tech === option.tech ? selected.zone : option.zone)}{option.conditional ? " · 有条件" : ""}</small></span>
       <span className="selection-circle">{selected?.tech === option.tech && <Check size={14} />}</span></button>)}</div>
     {!options.length && <p className="muted empty-options">{preferences.length && mode === "serve" && active === 1 ? "已选的常用接法没有适合这板的建议。可调整接法范围，或自选技术。" : "暂未找到适合这板的建议，可微调落点或自选技术。"}</p>}
     <div className="secondary-actions">{options.length > 3 && <button className="text-button" type="button" aria-expanded={more} onClick={() => setMore(!more)}>{more ? "收起" : "更多建议"}<ChevronDown size={14} /></button>}
@@ -90,13 +98,16 @@ function CustomShot({ draft, results, onChoose, close }) {
   const incoming = results[draft.active - 1]
   const [tech, setTech] = useState(draft.steps[draft.active]?.tech ?? ""), [zone, setZone] = useState(draft.steps[draft.active]?.zone ?? "mid-long")
   const [label, setLabel] = useState(draft.steps[draft.active]?.label ?? ""), [all, setAll] = useState(false), [query, setQuery] = useState("")
-  const assessment = assessStroke(incoming, tech)
+  const assessments = useMemo(() => Object.fromEntries(
+    STROKE_GROUPS.flatMap(group => group.strokes.map(id => [id, assessStroke(incoming, id)]))
+  ), [incoming])
+  const assessment = assessments[tech] ?? assessStroke(incoming, tech)
   return <Modal title="自选技术" close={close} wide>
     <label className="search-box technique-search"><Search size={17} /><input placeholder="搜索技术" aria-label="搜索技术" value={query} onChange={e => setQuery(e.target.value)} /></label>
     <label className="toggle-row"><input type="checkbox" checked={all} onChange={e => setAll(e.target.checked)} />显示不适用的技术及原因</label>
     <div className="technique-list">{STROKE_GROUPS.map(group => {
-      const items = group.strokes.filter(id => (all || assessStroke(incoming, id).allowed) && STROKES[id].name.includes(query.trim()))
-      return items.length ? <section key={group.name}><h3>{group.name}</h3>{items.map(id => { const a = assessStroke(incoming, id)
+      const items = group.strokes.filter(id => (all || assessments[id].allowed) && STROKES[id].name.includes(query.trim()))
+      return items.length ? <section key={group.name}><h3>{group.name}</h3>{items.map(id => { const a = assessments[id]
         return <button type="button" className="technique-option" key={id} aria-pressed={tech === id} disabled={!a.allowed} onClick={() => setTech(id)}>
           <span><strong>{STROKES[id].name}</strong><small>{a.reason || techniqueDescription(id)}</small></span>{tech === id && <Check size={16} />}</button>
       })}</section> : null
@@ -122,7 +133,7 @@ function RoutineLibrary({ records, pending, error, reload, open, onDelete, onSta
     groups.get(key).push(item)
   }
 
-  return <main className="main-frame library-view">
+  return <main id="workspace-main" className="main-frame library-view" tabIndex={-1}>
     <div className="page-heading">
       <div><h1>套路库</h1><p>查看你保存的发球、接发和后续分支。</p></div>
       <div className="library-actions"><button type="button" className="button outline" onClick={onImport}><Upload size={16}/>导入套路</button><button className="button icon subtle" aria-label="刷新套路库" type="button" onClick={reload} disabled={pending}><RefreshCw size={16} /></button></div>
@@ -230,20 +241,11 @@ export default function Workbench() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
   const [ideas, setIdeas] = useState({ openers: [], branches: [] })
-  const [preferences, setPreferences] = useState([])
+  const opponent = usePreferences(dialog?.type === "repertoire")
+  const preferences = opponent.snapshot?.groups ?? allReceives
   const categories = useMemo(() => [...new Set(records.map(r => r.category).filter(Boolean))].sort((a,b) => a.localeCompare(b,"zh")), [records])
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem("tt-receive-preferences") || "[]")
-      if (Array.isArray(saved)) setPreferences(receiveGroups.map(([key]) => key).filter(key => saved.includes(key)))
-    } catch {}
-  }, [])
-  function savePreferences(value) {
-    setPreferences(value)
-    try { localStorage.setItem("tt-receive-preferences", JSON.stringify(value)) } catch {}
-    setDialog(null)
-  }
   const [largeCourt, setLargeCourt] = useState(false)
+  const compact = useSyncExternalStore(subscribeToScreen, isCompact, desktopAtStartup)
   const editorTitle = useRef(null)
   const sequence = useRef(0)
   const id = useRef("")
@@ -296,6 +298,11 @@ export default function Workbench() {
     if (name === "library") void refresh()
     else setMode(name)
     window.scrollTo({ top: 0, behavior: "instant" })
+  }
+
+  function editPreferences() {
+    void opponent.refresh()
+    setDialog({ type: "repertoire" })
   }
 
   function changeServe(changes) {
@@ -434,40 +441,44 @@ export default function Workbench() {
   const court = <Court mode={mode} hands={hands} active={active} setup={draft.setup} steps={draft.steps} focus={focus} readResults={base} visibleResults={projected} adjustment={adjustment} setAdjustment={setAdjustment}
             setZone={setZone} editable={active === 0 ? !!draft.setup.spin : !!draft.steps[active]} expanded={largeCourt} setExpanded={setLargeCourt} />
   return <>
+    <a className="skip-link" href="#workspace-main">跳到工作区</a>
     <header className="top-bar"><div className="top-inner"><div className="brand"><img src="/favicon.svg" width="27" height="27" alt="" /><span>乒乓球发接发<span className="brand-tail">技战术分析平台</span></span></div>
-      <nav className="primary-nav" aria-label="分析模式">{Object.entries(modeNames).map(([key, name]) => <button key={key} type="button" aria-current={page === key ? "page" : undefined} onClick={() => changePage(key)}>{name}</button>)}
-        <button type="button" aria-current={page === "library" ? "page" : undefined} onClick={() => changePage("library")}><Library size={16} />套路库</button></nav></div></header>
+      <nav className="workspace-nav" aria-label="主导航">{page === "library"
+        ? <button type="button" onClick={() => changePage(mode)}><ArrowLeft size={16}/>返回分析台</button>
+        : <button type="button" onClick={() => changePage("library")}><Library size={16}/>套路库</button>}</nav></div></header>
     {page === "library" ? <RoutineLibrary records={records} pending={pending} error={cloudError} reload={refresh} open={open} onDelete={item => { setDialogError(""); setDialog({ type: "delete", item }) }} onStart={() => changePage(mode)} categories={categories}
       onShare={item => setDialog({type:"share", item})}
       onImport={() => { id.current = crypto.randomUUID(); setDialogError(""); setDialog({type:"import"}) }}
       onCategory={item => { setDialogError(""); setDialog({type:"category", item}) }} /> :
-      <main className="main-frame"><div className="page-heading"><div><p className="eyebrow">逐板拆解 · {mode === "serve" ? "发球套路" : "接发套路"}</p><h1>{mode === "serve" ? "发球与第三板" : "接发与第四板"}</h1></div>
-        <div className="page-actions"><button className="match-button" type="button" onClick={() => setDialog({ type: "players" })}>我方{handName(myHand)}<span>·</span>对手{handName(hand)}<SlidersHorizontal size={16} /></button>
-          <button className="button icon outline" type="button" onClick={find} aria-label="找新套路" title="找新套路"><Compass size={20} /></button></div></div>
-        <ol className="progress-steps" aria-label="套路步骤">{tracks[mode].map((title, index) => <li key={title}><button type="button" aria-current={active === index ? "step" : undefined} aria-label={(index + 1) + " " + title}
-          disabled={index > draft.steps.length || index > 0 && !base[index - 1]?.valid} onClick={() => goTo(index)}><span className="step-number">{index < active && draft.steps[index] ? <Check size={15} /> : index + 1}</span><span>{title}</span></button>
-          {index < tracks[mode].length - 1 && <span className="step-line" />}</li>)}</ol>
+      <main id="workspace-main" className="main-frame" tabIndex={-1}><div className="analysis-heading">
+        <h1>套路分析</h1>
+        <div className="mode-picker" role="group" aria-label="分析模式">{Object.entries(modeNames).map(([key, name]) => <button key={key} type="button" aria-pressed={mode === key} onClick={() => changePage(key)}>
+          {key === "serve" ? <ArrowUpRight size={21}/> : <ArrowDownLeft size={21}/>}<strong>{name}</strong><span>{key === "serve" ? "一、三板" : "二、四板"}</span></button>)}</div>
+        <div className="page-actions"><button className="match-button" type="button" onClick={() => setDialog({ type: "players" })}><SlidersHorizontal size={15}/>我方{handName(myHand)}<span>·</span>对手{handName(hand)}</button>
+          <button className="ideas-button" type="button" onClick={find}><Compass size={17}/>找新套路</button></div></div>
         <div className={"workspace" + (largeCourt ? " expanded-court" : "")}>
-          {largeCourt ? <Modal title="球台" close={() => setLargeCourt(false)}>{court}</Modal> : court}
-          <button className="court-float button" type="button" onClick={() => setLargeCourt(true)} aria-haspopup="dialog"><MapIcon size={17}/>球台</button>
 
-          <section className="panel editor-panel" id="decisions" aria-label={tracks[mode][active]}><div className="editor-body"><div className="editor-heading"><div><p className="eyebrow">第 {active + 1} 板 / {tracks[mode].length}</p>
-            <h2 ref={editorTitle} tabIndex={-1}>{tracks[mode][active]}</h2></div><span className="actor-dot">{shotActor(mode, active) === "me" ? "我方" : "对手"}</span></div>
-            {active === 0 ? <><p className="step-hint">{!draft.setup.family ? "先选一种发球。" : !draft.setup.spin ? "再选旋转。" : !draft.setup.zone ? "选择落点，也可以直接点球台。" : "落点可以在球台上微调。"}</p>
+          <section className="panel editor-panel" id="decisions" aria-label={tracks[mode][active]}>
+            <ol className="progress-steps" aria-label="套路步骤">{tracks[mode].map((title, index) => <li key={title}><button type="button" aria-current={active === index ? "step" : undefined} aria-label={(index + 1) + " " + title}
+              disabled={index > draft.steps.length || index > 0 && !base[index - 1]?.valid} onClick={() => goTo(index)}><span className="step-number">{index < active && draft.steps[index] ? <Check size={13} /> : index + 1}</span><span>{title}</span></button>
+              {index < tracks[mode].length - 1 && <span className="step-line" />}</li>)}</ol>
+            <div className="editor-body"><div className="editor-heading"><h2 ref={editorTitle} tabIndex={-1}>{tracks[mode][active]}</h2></div>
+            {active === 0 ? <>
               <ServeControls mode={mode} draft={draft} onChange={changeServe} />{base[0] && !base[0].valid && <p role="status" className="notice error">这组球速与落点暂时无法形成有效发球，请微调落点或球速。</p>}</> :
-              <Decisions key={mode + active} mode={mode} draft={draft} results={base} preferences={preferences} onPreferences={() => setDialog({type:"repertoire"})} choose={choose} onCustom={() => setDialog({ type: "custom" })} onZone={setZone} />}</div>
+              <Decisions key={mode + active} mode={mode} draft={draft} results={base} preferences={preferences} preferenceStatus={opponent.error ? "未同步" : !opponent.snapshot ? "读取中" : ""} onPreferences={editPreferences} choose={choose} onCustom={() => setDialog({ type: "custom" })} onZone={setZone} />}</div>
             <div className="step-actions"><button className="button subtle" type="button" onClick={() => active > 0 ? goTo(active - 1) : setDialog({ type: "reset" })} disabled={!active && !draft.setup.family}>
               {active > 0 ? <ArrowLeft size={17} /> : <RotateCcw size={16} />}{active > 0 ? "上一步" : "重选"}</button>
+              <button className="court-toggle button" type="button" onClick={() => setLargeCourt(true)} aria-haspopup="dialog"><MapIcon size={17}/>球台</button>
               <button className="button primary continue" type="button" disabled={!ready || active === tracks[mode].length - 1 && !complete} onClick={() => active < tracks[mode].length - 1 ? goTo(active + 1) : openSave()}>
-                {active === tracks[mode].length - 1 ? <><Bookmark size={17} />保存套路</> : <>继续<ArrowRight size={17} /></>}</button></div></section></div>
-        <footer className="page-footer"><span>落点按接球方标记</span><button className="text-button mobile-ideas" type="button" onClick={find}>找新套路<Compass size={14} /></button><button className="text-button" type="button" onClick={() => setDialog({ type: "refs" })}>关于建议<Info size={14} /></button></footer>
+                {active === tracks[mode].length - 1 ? <><Bookmark size={17} />保存套路</> : <>继续<ArrowRight size={17} /></>}</button></div></section>
+          {largeCourt ? <Modal title="球台" close={() => setLargeCourt(false)}>{court}</Modal> : !compact && court}</div>
       </main>}
     {dialog?.type === "share" && <ShareDialog item={dialog.item} close={close}/>}
     {dialog?.type === "import" && <ImportDialog close={close} busy={busy} error={dialogError} save={storeLibraryItem}/>}
     {dialog?.type === "category" && <CategoryDialog item={dialog.item} categories={categories} close={close} busy={busy} error={dialogError} save={storeLibraryItem}/>}
-    {dialog?.type === "repertoire" && <RepertoireDialog value={preferences} save={savePreferences} close={close}/>}
+    {dialog?.type === "repertoire" && <RepertoireDialog preferences={opponent} close={close}/>}
     {dialog?.type === "players" && <Modal title="对手与持拍手" close={close}><div className="player-settings">{[["myHand", "我方"], ["hand", "对手"]].map(([field, label]) => <div className="setting-row" key={field}>
-      <span>{label}</span><Segments values={{ right: "右手", left: "左手" }} value={hands[field]} set={value => changeHand(field, value)} label={label + "持拍手"} /></div>)}</div><p className="muted">更改持拍手后，后续板次需重选。</p><button type="button" className="button outline" onClick={() => setDialog({type:"repertoire"})}><SlidersHorizontal size={15}/>对手常用接法</button><div className="modal-actions"><button type="button" className="button primary" onClick={close}>完成</button></div></Modal>}
+      <span>{label}</span><Segments values={{ right: "右手", left: "左手" }} value={hands[field]} set={value => changeHand(field, value)} label={label + "持拍手"} /></div>)}</div><p className="muted">更改持拍手后，后续板次需重选。</p><button type="button" className="button outline" onClick={editPreferences}><SlidersHorizontal size={15}/>对手常用接法</button><div className="modal-actions"><button type="button" className="button primary" onClick={close}>完成</button></div></Modal>}
     {dialog?.type === "custom" && <CustomShot draft={draft} results={base} close={close} onChoose={choose} />}
     {dialog?.type === "save" && <SaveRoutine mode={mode} draft={draft} close={close} save={save} categories={categories} busy={busy} error={dialogError} />}
     {dialog?.type === "ideas" && <Modal title="找新套路" close={close} wide>{draft.steps.length > 0 && <IdeaList title="同一发球，换一种接法" ideas={ideas.branches} mode={mode} hands={hands} apply={apply} />}
@@ -476,9 +487,6 @@ export default function Workbench() {
       <button className="button primary" type="button" onClick={() => { update(() => blankDraft(myHand, hand)); close() }}>重新开始</button></div></Modal>}
     {dialog?.type === "delete" && <Modal title="删除这条套路？" close={close} busy={busy}><p className="delete-title">{dialog.item.title}</p>{dialogError && <p className="notice error" role="alert">{dialogError}</p>}
       <div className="modal-actions"><button className="button outline" type="button" disabled={busy} onClick={close}>取消</button><button className="button danger" type="button" disabled={busy} onClick={() => remove(dialog.item)}>删除</button></div></Modal>}
-    {dialog?.type === "refs" && <Modal title="关于建议" close={close}><div className="about-copy"><p>先看二跳长短和触球时的旋转，再看速度、击球空间与到位难度。优先建议侧重常见、稳妥的处理。</p>
-      <p>球路基于典型触球参数，用来比较线路。实际结果还取决于胶皮、拍形、步法和触球质量。</p><p>“借力”和“发力”表示侧重点，不是完全互斥。自选技术中可查看适用条件。</p></div>
-      <div className="refs">{refs.map(([source, title, url]) => <a className="ref-link" key={url} href={url} target="_blank" rel="noreferrer"><div><strong>{title}</strong><span>{source}</span></div><ArrowUpRight size={16} /></a>)}</div></Modal>}
     <div aria-live="polite">{message && <div className="toast"><Check size={17} />{message}</div>}</div>
   </>
 }

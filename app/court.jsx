@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { ChevronDown, Maximize2, Minimize2, Play, Target } from "lucide-react"
+import { ChevronDown, Maximize2, Play, Target } from "lucide-react"
 import { forehand, handName, other, playerHand, pointZone, shotActor, shotName, snapPoint, zoneName } from "../lib/table-tennis/catalog.mjs"
 import { COURT, secondLanding, clearanceDescription, secondBounceDescription, serveOrigin, spinDescription, targetPoint } from "../lib/table-tennis/physics.mjs"
 import { comparePlacement } from "../lib/table-tennis/tactics.mjs"
@@ -156,13 +156,7 @@ export default function Court({
   const canvas = useRef(null)
   const animation = useRef(null)
   const [playing, setPlaying] = useState(false)
-  const [compact, setCompact] = useState(false)
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 720px)")
-    const change = () => setCompact(media.matches)
-    change(); media.addEventListener("change", change)
-    return () => media.removeEventListener("change", change)
-  }, [])
+  const painter = useRef(null)
   const selectActor = other(shotActor(mode, focus))
   const selected = visibleResults[focus]
   const secondBounce = useMemo(() => secondLanding(selected), [selected])
@@ -209,11 +203,14 @@ export default function Court({
   }
 
   useLayoutEffect(() => {
+    painter.current = paint
     paint()
-    const observer = new ResizeObserver(() => paint())
+  })
+  useLayoutEffect(() => {
+    const observer = new ResizeObserver(() => painter.current())
     observer.observe(stage.current)
     return () => observer.disconnect()
-  })
+  }, [])
 
   useEffect(() => {
     if (animation.current) window.cancelAnimationFrame(animation.current)
@@ -270,18 +267,18 @@ export default function Court({
   const bounceLabel = selected?.valid ? secondBounceDescription(selected) : ""
 
   return <section className={"court-panel" + (expanded ? " is-expanded" : "")} aria-label="球台和球路">
-    <header className="court-toolbar"><span>{steps[focus] ? "第 " + (focus + 1) + " 板球路" : "球台"}</span><div>
+    <header className="court-toolbar"><span>{steps[focus] ? "第 " + (focus + 1) + " 板球路" : "球台"}</span><small>落点按接球方标记</small><div>
       <button className="button icon subtle" type="button" onClick={replay} aria-label="重播球路" title="重播球路" disabled={playing || !visibleResults.some(r => r?.points?.length)}><Play size={17} /></button>
-      <button className="button icon subtle expand-court" type="button" onClick={() => setExpanded(!expanded)} aria-label={expanded ? "收起球台" : "展开球台调整落点"}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button></div></header>
+      {!expanded && <button className="button icon subtle" type="button" onClick={() => setExpanded(true)} aria-label="展开球台调整落点"><Maximize2 size={16}/></button>}</div></header>
     <div className="stage" ref={stage}><div className="end-label far">对手<span className="end-hand">{handName(playerHand("opponent", hands))}</span></div>
       <div className="court" ref={field}>{zones.map(([side, length]) => <div className="court-row" key={side + length}>{[0, 1, 2].map(column => {
         const zone = getLabel(side, hands, length, column), aimed = selectActor === side && shot.zone === zone, name = zoneName(zone)
         const className = "court-zone" + (aimed ? " aimed" : "")
-        return editable && selectActor === side && (!compact || expanded) ? <button type="button" key={zone} className={className} aria-label={(side === "me" ? "我方" : "对手") + name}
+        return editable && selectActor === side ? <button type="button" key={zone} className={className} aria-label={(side === "me" ? "我方" : "对手") + name}
           aria-pressed={aimed} onClick={event => aimAt(event, zone)}><span>{name}</span></button> : <div key={zone} className={className}><span>{name}</span></div>
       })}</div>)}<div className="net" aria-hidden="true" /></div>
       <div className="end-label near">我方<span className="end-hand">{handName(playerHand("me", hands))}</span></div><canvas ref={canvas} className="court-canvas" aria-hidden="true" />
-      {!expanded && <button className="mini-court-overlay" type="button" aria-label="展开球台调整落点" onClick={() => setExpanded(true)} />}</div>
+      </div>
     <div className="court-pick"><p className="court-help"><Target size={14} />{editable ? "点球台，微调落点" : active === 0 ? "选择发球后查看球路" : "先选接法，再调整落点"}</p>
       {shot.point && editable && <button className="text-button" type="button" onClick={() => setZone(focus, shot.zone)}>复位</button>}</div>
     {steps.length > 0 && <div className="ball-readout" aria-live="polite"><div className="readout-heading"><NumberBadge index={focus} /><strong>{shotName(shot, focusActor, hands)}</strong></div>
