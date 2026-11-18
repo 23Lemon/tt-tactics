@@ -5,7 +5,10 @@ import { loadPreferences, writePreferences } from "../lib/table-tennis/preferenc
 function storage() {
   try { return window.localStorage } catch { return null }
 }
-export function usePreferences(editing) {
+const deviceOnly = async () => new Response(null, { status: 401 })
+
+export function usePreferences(editing, localOnly = false) {
+  const send = localOnly ? deviceOnly : fetch
   const [snapshot, setSnapshot] = useState(null), [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const sequence = useRef(0), writing = useRef(false)
@@ -13,12 +16,12 @@ export function usePreferences(editing) {
     if (writing.current) return
     const token = ++sequence.current
     try {
-      const current = await loadPreferences(fetch, storage())
+      const current = await loadPreferences(send, storage())
       if (token === sequence.current) { setSnapshot(current); setError("") }
     } catch (e) {
       if (token === sequence.current) setError(e.message)
     }
-  }, [])
+  }, [send])
   useEffect(() => { void refresh() }, [refresh])
   useEffect(() => {
     const visible = () => { if (!editing && document.visibilityState === "visible") void refresh() }
@@ -31,13 +34,13 @@ export function usePreferences(editing) {
     writing.current = true
     setBusy(true)
     try {
-      const current = await writePreferences(fetch, storage(), base, groups)
+      const current = await writePreferences(send, storage(), base, groups)
       setSnapshot(current); setError("")
       return true
     } catch (e) {
       if (e.current) setSnapshot(e.current)
       if (e.status === 401) setSnapshot(null)
-      setError(e.message)
+      setError(localOnly ? "当前浏览器无法保存设置。" : e.message)
       return false
     } finally { writing.current = false; setBusy(false) }
   }

@@ -118,7 +118,7 @@ function CustomShot({ draft, results, onChoose, close }) {
       <div className="modal-actions"><button type="submit" className="button primary" disabled={!assessment.allowed}>选用这板<Check size={16} /></button></div></form>}
   </Modal>
 }
-function RoutineLibrary({ records, pending, error, reload, open, onDelete, onStart, onShare, onImport, onCategory, categories }) {
+function RoutineLibrary({ localOnly, records, pending, error, reload, open, onDelete, onStart, onShare, onImport, onCategory, categories }) {
   const [category, setCategory] = useState("*")
   const [which, setWhich] = useState("all")
   const [search, setSearch] = useState("")
@@ -135,7 +135,7 @@ function RoutineLibrary({ records, pending, error, reload, open, onDelete, onSta
 
   return <main id="workspace-main" className="main-frame library-view" tabIndex={-1}>
     <div className="page-heading">
-      <div><h1>套路库</h1><p>查看你保存的发球、接发和后续分支。</p></div>
+      <div><h1>套路库</h1><p>{localOnly ? "套路保存在当前浏览器，可导出分享。" : "查看你保存的发球、接发和后续分支。"}</p></div>
       <div className="library-actions"><button type="button" className="button outline" onClick={onImport}><Upload size={16}/>导入套路</button><button className="button icon subtle" aria-label="刷新套路库" type="button" onClick={reload} disabled={pending}><RefreshCw size={16} /></button></div>
     </div>
     <div className="library-controls">
@@ -228,7 +228,7 @@ function SaveRoutine({ mode, draft, busy, error, close, save, categories }) {
   </Modal>
 }
 
-export default function Workbench() {
+export default function Workbench({ routineStore = cloud, localOnly = false, brandIcon = "/favicon.svg" } = {}) {
   const [page, setPage] = useState("serve")
   const [mode, setMode] = useState("serve")
   const [drafts, setDrafts] = useState(defaults)
@@ -241,7 +241,7 @@ export default function Workbench() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
   const [ideas, setIdeas] = useState({ openers: [], branches: [] })
-  const opponent = usePreferences(dialog?.type === "repertoire")
+  const opponent = usePreferences(dialog?.type === "repertoire", localOnly)
   const preferences = opponent.snapshot?.groups ?? allReceives
   const categories = useMemo(() => [...new Set(records.map(r => r.category).filter(Boolean))].sort((a,b) => a.localeCompare(b,"zh")), [records])
   const [largeCourt, setLargeCourt] = useState(false)
@@ -261,7 +261,7 @@ export default function Workbench() {
     const index = ++sequence.current
     setPending(true)
     try {
-      const { items } = await cloud()
+      const { items } = await routineStore()
       if (index === sequence.current) {
         setRecords(items)
         setCloudError("")
@@ -271,7 +271,7 @@ export default function Workbench() {
     } finally {
       if (index === sequence.current) setPending(false)
     }
-  }, [])
+  }, [routineStore])
 
   useEffect(() => {
     void refresh()
@@ -371,7 +371,7 @@ export default function Workbench() {
       const { saved, steps } = draft
       const payload = { ...form, mode, ...hands, steps, id: updateExisting ? saved.id : id.current,
         ...(updateExisting ? { revision: saved.revision } : {}) }
-      const { item } = await cloud(updateExisting ? "PUT" : "POST", payload)
+      const { item } = await routineStore(updateExisting ? "PUT" : "POST", payload)
       sequence.current++
       setPending(false)
       setRecords(previous => [item, ...previous.filter(record => record.id !== item.id)])
@@ -392,7 +392,7 @@ export default function Workbench() {
     setBusy(true)
     setDialogError("")
     try {
-      const { item } = await cloud(existing ? "PUT" : "POST", { ...value, id: existing?.id || id.current,
+      const { item } = await routineStore(existing ? "PUT" : "POST", { ...value, id: existing?.id || id.current,
         ...(existing ? { revision: existing.revision } : {}) })
       sequence.current++
       setPending(false)
@@ -417,7 +417,7 @@ export default function Workbench() {
     setBusy(true)
     setDialogError("")
     try {
-      await cloud("DELETE", { id: item.id, revision: item.revision })
+      await routineStore("DELETE", { id: item.id, revision: item.revision })
       sequence.current++
       setPending(false)
       setRecords(previous => previous.filter(record => record.id !== item.id))
@@ -442,11 +442,11 @@ export default function Workbench() {
             setZone={setZone} editable={active === 0 ? !!draft.setup.spin : !!draft.steps[active]} expanded={largeCourt} setExpanded={setLargeCourt} />
   return <>
     <a className="skip-link" href="#workspace-main">跳到工作区</a>
-    <header className="top-bar"><div className="top-inner"><div className="brand"><img src="/favicon.svg" width="27" height="27" alt="" /><span>乒乓球发接发<span className="brand-tail">技战术分析平台</span></span></div>
+    <header className="top-bar"><div className="top-inner"><div className="brand"><img src={brandIcon} width="27" height="27" alt="" /><span>乒乓球发接发<span className="brand-tail">技战术分析平台</span></span></div>
       <nav className="workspace-nav" aria-label="主导航">{page === "library"
         ? <button type="button" onClick={() => changePage(mode)}><ArrowLeft size={16}/>返回分析台</button>
         : <button type="button" onClick={() => changePage("library")}><Library size={16}/>套路库</button>}</nav></div></header>
-    {page === "library" ? <RoutineLibrary records={records} pending={pending} error={cloudError} reload={refresh} open={open} onDelete={item => { setDialogError(""); setDialog({ type: "delete", item }) }} onStart={() => changePage(mode)} categories={categories}
+    {page === "library" ? <RoutineLibrary localOnly={localOnly} records={records} pending={pending} error={cloudError} reload={refresh} open={open} onDelete={item => { setDialogError(""); setDialog({ type: "delete", item }) }} onStart={() => changePage(mode)} categories={categories}
       onShare={item => setDialog({type:"share", item})}
       onImport={() => { id.current = crypto.randomUUID(); setDialogError(""); setDialog({type:"import"}) }}
       onCategory={item => { setDialogError(""); setDialog({type:"category", item}) }} /> :
@@ -465,7 +465,7 @@ export default function Workbench() {
             <div className="editor-body"><div className="editor-heading"><h2 ref={editorTitle} tabIndex={-1}>{tracks[mode][active]}</h2></div>
             {active === 0 ? <>
               <ServeControls mode={mode} draft={draft} onChange={changeServe} />{base[0] && !base[0].valid && <p role="status" className="notice error">这组球速与落点暂时无法形成有效发球，请微调落点或球速。</p>}</> :
-              <Decisions key={mode + active} mode={mode} draft={draft} results={base} preferences={preferences} preferenceStatus={opponent.error ? "未同步" : !opponent.snapshot ? "读取中" : ""} onPreferences={editPreferences} choose={choose} onCustom={() => setDialog({ type: "custom" })} onZone={setZone} />}</div>
+              <Decisions key={mode + active} mode={mode} draft={draft} results={base} preferences={preferences} preferenceStatus={opponent.error ? "读取失败" : !opponent.snapshot ? "读取中" : ""} onPreferences={editPreferences} choose={choose} onCustom={() => setDialog({ type: "custom" })} onZone={setZone} />}</div>
             <div className="step-actions"><button className="button subtle" type="button" onClick={() => active > 0 ? goTo(active - 1) : setDialog({ type: "reset" })} disabled={!active && !draft.setup.family}>
               {active > 0 ? <ArrowLeft size={17} /> : <RotateCcw size={16} />}{active > 0 ? "上一步" : "重选"}</button>
               <button className="court-toggle button" type="button" onClick={() => setLargeCourt(true)} aria-haspopup="dialog"><MapIcon size={17}/>球台</button>
@@ -476,7 +476,7 @@ export default function Workbench() {
     {dialog?.type === "share" && <ShareDialog item={dialog.item} close={close}/>}
     {dialog?.type === "import" && <ImportDialog close={close} busy={busy} error={dialogError} save={storeLibraryItem}/>}
     {dialog?.type === "category" && <CategoryDialog item={dialog.item} categories={categories} close={close} busy={busy} error={dialogError} save={storeLibraryItem}/>}
-    {dialog?.type === "repertoire" && <RepertoireDialog preferences={opponent} close={close}/>}
+    {dialog?.type === "repertoire" && <RepertoireDialog localOnly={localOnly} preferences={opponent} close={close}/>}
     {dialog?.type === "players" && <Modal title="对手与持拍手" close={close}><div className="player-settings">{[["myHand", "我方"], ["hand", "对手"]].map(([field, label]) => <div className="setting-row" key={field}>
       <span>{label}</span><Segments values={{ right: "右手", left: "左手" }} value={hands[field]} set={value => changeHand(field, value)} label={label + "持拍手"} /></div>)}</div><p className="muted">更改持拍手后，后续板次需重选。</p><button type="button" className="button outline" onClick={editPreferences}><SlidersHorizontal size={15}/>对手常用接法</button><div className="modal-actions"><button type="button" className="button primary" onClick={close}>完成</button></div></Modal>}
     {dialog?.type === "custom" && <CustomShot draft={draft} results={base} close={close} onChoose={choose} />}
