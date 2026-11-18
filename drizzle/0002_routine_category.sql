@@ -1,0 +1,1 @@
+ALTER TABLE `routines` ADD `category` text DEFAULT '' NOT NULL;

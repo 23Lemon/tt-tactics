@@ -47,6 +47,7 @@ async function save(request: Request, update: boolean) {
     (data.myHand !== undefined && data.myHand !== "left" && data.myHand !== "right") ||
     (data.status !== "using" && data.status !== "practice") ||
     typeof data.title !== "string" || !data.title.trim() || data.title.trim().length > 60 ||
+    (data.category !== undefined && (typeof data.category !== "string" || data.category.length > 32)) ||
     typeof data.note !== "string" || data.note.length > 1000) {
     return respond({ error: "请检查套路名称、备注和线路。" }, 400);
   }
@@ -59,6 +60,7 @@ async function save(request: Request, update: boolean) {
     status: data.status,
     title: data.title.trim(),
     note: data.note.trim(),
+    ...(data.category === undefined ? {} : { category: data.category.trim() }),
     steps,
     updatedAt: Date.now(),
   };

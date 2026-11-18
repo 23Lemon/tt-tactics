@@ -15,6 +15,13 @@
       "when": 1794795687140,
       "tag": "0001_add_my_hand",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794972971285,
+      "tag": "0002_routine_category",
+      "breakpoints": true
     }
   ]
 }

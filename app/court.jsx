@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, Maximize2, Minimize2, Play, Target } from "lucide-react"
 import { forehand, handName, other, playerHand, pointZone, shotActor, shotName, snapPoint, zoneName } from "../lib/table-tennis/catalog.mjs"
-import { COURT, clearanceDescription, secondBounceDescription, serveOrigin, spinDescription, targetPoint } from "../lib/table-tennis/physics.mjs"
+import { COURT, secondLanding, clearanceDescription, secondBounceDescription, serveOrigin, spinDescription, targetPoint } from "../lib/table-tennis/physics.mjs"
 import { comparePlacement } from "../lib/table-tennis/tactics.mjs"
 
 export const colors = ["#f7cf75", "#bedfff", "#d3f1d3", "#ffd0be"]
@@ -17,9 +17,19 @@ export function NumberBadge({ index }) {
 function positioner(stage, surface) {
   const board = surface.getBoundingClientRect()
   const frame = stage.getBoundingClientRect()
+  const left = board.left - frame.left, top = board.top - frame.top
+  // Keep the table selectable at full size. Compress only the off-table margins.
+  function project(value, size, start, viewport) {
+    if (value >= 0 && value <= size) return start + value
+    const before = value < 0
+    const room = Math.max(2, (before ? start : viewport - start - size) - 8)
+    const distance = before ? -value : value - size
+    const offset = room * distance / (room + distance)
+    return before ? start - offset : start + size + offset
+  }
   return p => [
-    board.left - frame.left + board.width * (p[0] + COURT.halfWidth) / (2 * COURT.halfWidth),
-    board.top - frame.top + board.height * (COURT.halfLength - p[1]) / (2 * COURT.halfLength),
+    project(board.width * (p[0] + COURT.halfWidth) / (2 * COURT.halfWidth), board.width, left, frame.width),
+    project(board.height * (COURT.halfLength - p[1]) / (2 * COURT.halfLength), board.height, top, frame.height),
   ]
 }
 
@@ -35,7 +45,7 @@ function dot(context, x, y, radius, fill, stroke, width = 1) {
   }
 }
 
-function indicator(context, map, focus, result, hasNext, exact) {
+function indicator(context, map, focus, result, hasNext, exact, secondBounce) {
   if (result.spread?.length > 1 && result.landing) {
     const points = [result.landing, ...result.spread].map(map)
     const [xs, ys] = [points.map(p => p[0]), points.map(p => p[1])]
@@ -63,12 +73,10 @@ function indicator(context, map, focus, result, hasNext, exact) {
     context.setLineDash([])
   }
 
-  const second = result.exit?.p ?? (result.short ? result.follow?.hit?.p : null)
+  const second = secondBounce?.point
   if (second && !hasNext) {
     context.beginPath()
-    const continuation = result.exit
-      ? [...result.follow.states.slice(0, result.exit.index).map(({ p }) => p), second]
-      : result.follow.states.map(({ p }) => p)
+    const continuation = secondBounce.states.map(state => state.p)
     continuation.forEach((p, index) => {
       const [x, y] = map(p)
       if (index === 0) context.moveTo(x, y)
@@ -80,13 +88,13 @@ function indicator(context, map, focus, result, hasNext, exact) {
     context.stroke()
     context.setLineDash([])
     const [dx, dy] = map(second)
-    dot(context, dx, dy, 3.1, result.exit ? "#16473d" : colors[focus] + "bb", colors[focus] + "bb")
+    dot(context, dx, dy, 4.5, result.exit ? "#fff" : colors[focus], "#245a4c", 1.8)
   }
 }
 
-function drawRoute(context, map, results, focus, playhead, exact) {
+function drawRoute(context, map, results, focus, playhead, exact, secondBounce) {
   const focused = results[focus]
-  if (focused) indicator(context, map, focus, focused, !!results[focus + 1], exact)
+  if (focused) indicator(context, map, focus, focused, !!results[focus + 1], exact, secondBounce)
   for (let index = 0; index < results.length; index++) {
     const result = results[index]
     if (!result?.points?.length) continue
@@ -157,6 +165,7 @@ export default function Court({
   }, [])
   const selectActor = other(shotActor(mode, focus))
   const selected = visibleResults[focus]
+  const secondBounce = useMemo(() => secondLanding(selected), [selected])
   const original = readResults[focus]
   const shot = steps[focus] ?? setup
   const zones = [
@@ -180,7 +189,7 @@ export default function Court({
     const map = positioner(stage.current, field.current)
     const [x, y] = map(serveOrigin(setup, shotActor(mode, 0), hands))
     dot(context, x, y, 5.1, "#0e654e", "#eaf5ef", 1.7)
-    drawRoute(context, map, visibleResults, focus, playhead, !!shot.point)
+    drawRoute(context, map, visibleResults, focus, playhead, !!shot.point, secondBounce)
 
     if (shot.point) {
       const target = targetPoint(shot.zone, selectActor, hands, shot.point)
@@ -217,7 +226,7 @@ export default function Court({
 
   function replay() {
     if (animation.current) window.cancelAnimationFrame(animation.current)
-    const points = visibleResults.flatMap(ball => ball?.points ?? [])
+    const points = [...visibleResults.flatMap(ball => ball?.points ?? []), ...(secondBounce?.states ?? [])]
     if (!points.length) return
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { paint(); return }
     const duration = Math.max(1100, points.length * 9)
@@ -276,7 +285,8 @@ export default function Court({
     <div className="court-pick"><p className="court-help"><Target size={14} />{editable ? "点球台，微调落点" : active === 0 ? "选择发球后查看球路" : "先选接法，再调整落点"}</p>
       {shot.point && editable && <button className="text-button" type="button" onClick={() => setZone(focus, shot.zone)}>复位</button>}</div>
     {steps.length > 0 && <div className="ball-readout" aria-live="polite"><div className="readout-heading"><NumberBadge index={focus} /><strong>{shotName(shot, focusActor, hands)}</strong></div>
-      <div className="readout-values"><span className={selected?.valid ? "" : "bad-outcome"}>{selected?.valid ? "第一落点 · " + outcome : outcome}</span>{selected?.valid && <span>{bounceLabel}</span>}</div>
+      <div className="readout-values"><span className={selected?.valid ? "" : "bad-outcome"}>{selected?.valid ? "第一落点 · " + outcome : outcome}</span>{selected?.valid && <span>{bounceLabel}</span>}
+        {secondBounce?.floor && <span>空心点为预计落地处 · 距台边 {Math.hypot(Math.max(0, Math.abs(secondBounce.point[0]) - COURT.halfWidth), Math.max(0, Math.abs(secondBounce.point[1]) - COURT.halfLength)).toFixed(1)} 米（台外压缩显示）</span>}</div>
       {focus > 0 && original?.valid && <details className="disclosure court-details"><summary>查看触球对比<ChevronDown size={14} /></summary><div className="read-toggle" role="group" aria-label="拍形对比">
         <button type="button" aria-pressed={adjustment === "read"} onClick={() => setAdjustment("read")}>正确处理</button><button type="button" aria-pressed={adjustment === "fixed"} onClick={() => setAdjustment("fixed")}>{compensateSide ? "未补侧旋" : "当不转接"}</button></div>
         <p>{selected?.valid ? spinDescription(selected) + " · " + netLabel : "预计失误"}{deviation ? " · " + deviation : ""}</p><p className="muted">下一板建议始终按正确处理计算。色晕仅表示触球扰动的示意。</p></details>}

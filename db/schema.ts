@@ -14,6 +14,7 @@ export const routines = sqliteTable("routines", {
   hand: text("hand", { enum: ["right", "left"] }).notNull(),
   myHand: text("my_hand", { enum: ["right", "left"] }).notNull().default("right"),
   steps: text("steps", { mode: "json" }).$type<Step[]>().notNull(),
+  category: text("category").notNull().default(""),
   note: text("note").notNull(),
   status: text("status", { enum: ["using", "practice"] }).notNull(),
   revision: integer("revision").notNull(),
