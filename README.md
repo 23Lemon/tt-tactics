@@ -12,6 +12,25 @@
 - `app/api/routines/`：用户隔离、版本冲突检测和输入校验。
 - `drizzle/`：数据库迁移，包括套路的可选分类。
 
+## GitHub Pages 左右对打界面
+
+Pages 版使用 `pages/rally-workbench.jsx`：我方固定左侧、对手固定右侧，当前板次的发球和接发选项在对应一侧展开。接球半台支持连续点选及方向键微调，卡片、球网箭头和半台中心保持对齐。
+
+- 推荐、技术适用性与物理分析仍复用 `lib/table-tennis/`，不使用示例推荐规则。
+- `pages/rally-domain.mjs` 将左右半台坐标转换为原格式 `{ lateral, depth }`；修改上游选择会重选后续板次。
+- 套路库继续使用原 `pages/routine-store.mjs` 与 `tt-tactics/routine` JSON 格式，保留旧套路、分类、想练／在用、笔记和连续落点。
+- 每板只保存最终坐标，不保存点击历史或模拟轨迹。回归测试覆盖普通连续落点分享小于 2 KiB，现有字段极值小于 8 KiB。
+- ChatGPT Site 入口与 `app/workbench.jsx` 保持原样。仅修改 Pages 专用界面时不需要发布 Site。
+
+```sh
+npm ci
+npm run dev:pages
+npm run test:pages
+npm run build:pages
+```
+
+默认本机预览为 `127.0.0.1:18796`，可用 `npm run dev:pages -- --port 5174` 修改端口。
+
 ## 双站点发布
 
 每次更新共用的 UI 或推荐逻辑，都从同一份源码发布两个版本。
