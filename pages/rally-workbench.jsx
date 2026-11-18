@@ -141,8 +141,8 @@ function DecisionEditor({ draft, results, options, onChoose, onCustom }) {
   return <>
     <div className="rally-incoming"><span>来球</span><strong>{incoming?.valid ? zoneName(incoming.zone) : '上一板待调整'}</strong><span>{incoming?.valid ? spinDescription(incoming) : ''}</span>{incoming?.valid && <small>{secondBounceDescription(incoming)}</small>}</div>
     <div className="rally-decisions" role="group" aria-label={`${roleName(actorAt(draft, draft.active))}第${draft.active + 1}板接法`}>
-      {(more ? options : options.slice(0, 3)).map((option, i) => <button type="button" key={option.tech} className="rally-option" aria-pressed={shot?.tech === option.tech} onClick={() => onChoose(shot?.tech === option.tech ? shot : option)}>
-        <span><strong>{STROKES[option.tech].name}</strong>{i === 0 && <small className="rally-priority">{actorAt(draft, draft.active) === 'me' ? '优先考虑' : '优先预判'}</small>}<small>{option.effort} · {zoneName(shot?.tech === option.tech ? shot.zone : option.zone)}{option.conditional ? ' · 有条件' : ''}</small></span><span className="rally-selection" aria-hidden="true">{shot?.tech === option.tech && <Check size={11} />}</span>
+      {(more ? options : options.slice(0, 3)).map((option) => <button type="button" key={option.tech} className="rally-option" aria-pressed={shot?.tech === option.tech} onClick={() => onChoose(shot?.tech === option.tech ? shot : option)}>
+        <span><strong>{STROKES[option.tech].name}</strong>{option.priority && <small className="rally-priority">{actorAt(draft, draft.active) === 'me' ? '优先考虑' : '优先预判'}</small>}<small>{option.effort} · {zoneName(shot?.tech === option.tech ? shot.zone : option.zone)}{option.conditional ? ' · 有条件' : ''}</small></span><span className="rally-selection" aria-hidden="true">{shot?.tech === option.tech && <Check size={11} />}</span>
       </button>)}
     </div>
     {!options.length && <p className="rally-inline-message">暂无适用建议，可调整上一板或自选技术。</p>}
