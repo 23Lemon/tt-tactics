@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Bookmark, Check, ChevronDown, ChevronUp, Compass, Crosshair, Info, Library, RotateCcw, Settings2, UserRound, X } from 'lucide-react'
-import { SERVE_DISTANCE, SERVE_POSITION_LIMITS, STROKE_GROUPS, handName, serveSpinName, shotName, zoneName } from '../lib/table-tennis/catalog.mjs'
-import { secondBounceDescription, spinDescription } from '../lib/table-tennis/physics.mjs'
+import { SERVE_DISTANCE, SERVE_POSITION_LIMITS, STROKE_GROUPS, handName, servePositionName, serveSpinName, shotName, zoneName } from '../lib/table-tennis/catalog.mjs'
+import { COURT, serveOrigin, secondBounceDescription, spinDescription } from '../lib/table-tennis/physics.mjs'
 import { assessStroke, techniqueDescription } from '../lib/table-tennis/tactics.mjs'
 import { receiveGroups } from '../lib/table-tennis/repertoire.mjs'
 import { Modal, RouteSummary } from '../app/routine-controls.jsx'
@@ -22,7 +22,50 @@ function Segments({ values, value, onChange, label }) {
   return <div className="rally-segments" role="group" aria-label={label}>{Object.entries(values).map(([key, name]) => <button type="button" key={key} aria-pressed={key === value} onClick={() => onChange(key)}>{name}</button>)}</div>
 }
 
-function HalfTable({ draft, index, onPoint }) {
+function positionOnTable(p) {
+  return [104 * p[1] / COURT.halfLength, 50 + 46 * p[0] / COURT.halfWidth]
+}
+
+function RallyFlight({ ball, receiver }) {
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  if (!ball?.points?.length) return null
+  const offset = receiver === 'me' ? 104 : 0
+  const xy = state => {
+    const [x, y] = positionOnTable(state.p)
+    return [x + offset, y]
+  }
+  const track = ball.points.map(xy)
+  const approach = track.filter(([x]) => x >= 0 && x <= 104)
+  const tip = Math.floor(approach.length * .7)
+  const arrow = tip > 0 ? approach.slice(tip - 1, tip + 1) : []
+  const rebound = ball.follow?.states.map(xy) ?? []
+  return <g pointerEvents="none">
+    <defs><clipPath id={'bounds' + id}><rect x="0" y="4" width="104" height="92"/></clipPath>
+      <marker id={'arrow' + id} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#ffd686"/></marker></defs>
+    <g clipPath={'url(#bounds' + id + ')'} fill="none" stroke="#ffd686" strokeWidth="1.35">
+      <polyline points={track.join(' ')}/>
+      {arrow.length > 0 && <polyline points={arrow.join(' ')} markerEnd={'url(#arrow' + id + ')'}/>}
+      <polyline points={rebound.join(' ')} strokeDasharray="2 2" opacity=".8"/>
+    </g>
+  </g>
+}
+
+function StancePreview({ draft }) {
+  const actor = actorAt(draft, 0)
+  const [x, y] = positionOnTable(serveOrigin(draft.setup, actor, draft))
+  return <div className="rally-destination stance-preview" role="img" aria-label={roleName(actor) + '发球站位，' + servePositionName(draft.setup.position) + '，离台' + draft.setup.distance + '厘米'}>
+    <svg viewBox="-145 -12 290 126" className="half-table-svg" aria-hidden="true">
+      <rect x="-104" y="4" width="208" height="92" rx="1" fill="#214c3b"/>
+      <path d="M-104 50H104 M0 2V98" stroke="#e3efe5" fill="none"/>
+      <path d={`M${x} ${y}H${actor === 'me' ? -104 : 104}`} stroke="#bd762a" strokeDasharray="2 1"/>
+      <circle cx={x} cy={y} r="5" fill="#e7a642" stroke="#594224" strokeWidth="1.5"/>
+    </svg>
+    <strong>{roleName(actor)} · {servePositionName(draft.setup.position)}</strong>
+    <small>击球位置示意 · 离台 {draft.setup.distance} 厘米</small>
+  </div>
+}
+
+function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
   const view = getLandingView(draft, index)
   const me = view.receiver === 'me'
   const current = index === draft.active
@@ -48,23 +91,32 @@ function HalfTable({ draft, index, onPoint }) {
     <path d={`M52 4V96 M0 ${4 + 92 / 3}H104 M0 ${4 + 184 / 3}H104`} className="half-grid" vectorEffect="non-scaling-stroke" />
     <rect x="0" y="4" width="104" height="92" className="half-outline" vectorEffect="non-scaling-stroke" />
     <line x1={me ? 104 : 0} y1="1" x2={me ? 104 : 0} y2="99" className="half-net" vectorEffect="non-scaling-stroke" />
-    {view.u !== null && <circle cx={view.u * 104} cy={4 + view.v * 92} r="5.2" className="half-dot" />}
+    <RallyFlight ball={ball} receiver={view.receiver}/>
+    {view.u !== null && <circle cx={view.u * 104} cy={4 + view.v * 92} r="2.8" className="half-dot" />}
   </svg>
   return <div className="rally-destination">
-    <figure className={`half-view ${me ? 'half-me' : 'half-opponent'}`} aria-label={`${roleName(view.receiver)}${handName(view.hand)}半台，${zoneName(view.zone) || '待选落点'}`} data-recipient={view.receiver} data-zone={view.zone || ''} data-u={view.u ?? ''} data-v={view.v ?? ''}>
+    <figure className={`half-view ${choosingLanding ? 'choosing-landing' : ''} ${me ? 'half-me' : 'half-opponent'}`} aria-label={`${roleName(view.receiver)}${handName(view.hand)}半台，${zoneName(view.zone) || '待选落点'}`} data-recipient={view.receiver} data-zone={view.zone || ''} data-u={view.u ?? ''} data-v={view.v ?? ''}>
       <div className="half-depths">{view.depths.map(depth => <span key={depth}>{depthLabels[depth]}</span>)}</div>
       <div className="half-lanes">{view.lanes.map(lane => <span key={lane}>{laneLabels[lane]}</span>)}</div>
       {current ? <button className="half-target" type="button" aria-label={`在${roleName(view.receiver)}半台点选落点，当前${zoneName(view.zone) || '未选择'}，方向键微调`} disabled={!ready} onClick={pick} onKeyDown={keydown}>
         {graphic}{ready && view.u === null && <Crosshair size={18} className="half-empty-marker" aria-hidden="true" />}
       </button> : <div className="half-target">{graphic}</div>}
-      <strong className="half-zone-name" aria-live={current ? 'polite' : 'off'}>{zoneName(view.zone) || '待选落点'}</strong>
+      <strong className="half-zone-name" aria-live={current ? 'polite' : 'off'}>{zoneName(view.zone) || (choosingLanding ? '请点选落点' : '待选落点')}</strong>
     </figure>
   </div>
 }
 
-function ServeEditor({ draft, onChange, part, setPart }) {
+function ServeEditor({ draft, onChange, part, setPart, setPreview }) {
   const setup = draft.setup
   const expanded = part || (!setup.family ? 'family' : !setup.spin ? 'spin' : null)
+  const previewEvents = {
+    onPointerDown: event => { event.currentTarget.setPointerCapture(event.pointerId); setPreview(true) },
+    onPointerUp: () => setPreview(false),
+    onLostPointerCapture: () => setPreview(false),
+    onKeyDown: event => { if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.key)) setPreview(true) },
+    onKeyUp: () => setPreview(false),
+    onBlur: () => setPreview(false),
+  }
   const group = (key, title, options) => <div className="rally-field" key={key}>
     <button className="rally-field-toggle" type="button" aria-expanded={expanded === key} onClick={() => setPart(expanded === key ? null : key)}><span>{title}</span><strong>{key === 'family' ? SERVES[setup.family]?.name || '请选择' : setup.spin ? serveSpinName(setup, actorAt(draft, 0), draft) : '请选择'}</strong>{expanded === key ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button>
     {expanded === key && <div className="rally-pick-list">{options.map(([value, label]) => <button key={value} type="button" aria-pressed={setup[key] === value} onClick={() => { onChange({ [key]: value }); setPart(key === 'family' ? 'spin' : null) }}>{label}{setup[key] === value && <Check size={13} />}</button>)}</div>}
@@ -75,8 +127,8 @@ function ServeEditor({ draft, onChange, part, setPart }) {
     {setup.family && <details className="rally-disclosure rally-serve-settings"><summary>更多设置</summary><div className="rally-advanced-fields">
       <label>球速<select aria-label="发球球速" value={setup.pace} onChange={event => onChange({ pace: event.target.value })}>{Object.entries(PACES).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
       {setup.spin !== 'dead' && <label>旋转强度<select aria-label="旋转强度" value={setup.strength} onChange={event => onChange({ strength: event.target.value })}>{Object.entries(STRENGTHS).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>}
-      <label>横向站位<input type="range" aria-label="发球横向站位" min={SERVE_POSITION_LIMITS.min} max={SERVE_POSITION_LIMITS.max} step=".01" value={Math.min(setup.position, SERVE_POSITION_LIMITS.max)} onChange={event => onChange({ position: Number(event.target.value) })} /></label>
-      <label>离台 {setup.distance} 厘米<input type="range" aria-label="发球离台距离" min={SERVE_DISTANCE.min} max={SERVE_DISTANCE.max} step="1" value={setup.distance} onChange={event => onChange({ distance: Number(event.target.value) })} /></label>
+      <label>横向站位 · {servePositionName(setup.position)}<input {...previewEvents} type="range" aria-label="发球横向站位" min={SERVE_POSITION_LIMITS.min} max={SERVE_POSITION_LIMITS.max} step=".01" value={Math.min(setup.position, SERVE_POSITION_LIMITS.max)} onChange={event => onChange({ position: Number(event.target.value) })} /></label>
+      <label>离台 {setup.distance} 厘米<input {...previewEvents} type="range" aria-label="发球离台距离" min={SERVE_DISTANCE.min} max={SERVE_DISTANCE.max} step="1" value={setup.distance} onChange={event => onChange({ distance: Number(event.target.value) })} /></label>
     </div></details>}
   </>
 }
@@ -132,6 +184,7 @@ function PlayerSettings({ draft, preferences, onHands, close }) {
 export default function RallyWorkbench() {
   const [mode, setMode] = useState('serve')
   const [drafts, setDrafts] = useState(() => ({ serve: createDraft('serve'), receive: createDraft('receive') }))
+  const [stancePreview, setStancePreview] = useState(false)
   const [servePart, setServePart] = useState('family')
   const [dialog, setDialog] = useState(null), [manager, setManager] = useState(null), [message, setMessage] = useState(''), [records, setRecords] = useState([]), [adjustment, setAdjustment] = useState('read')
   const rally = useRef(null)
@@ -183,15 +236,17 @@ export default function RallyWorkbench() {
     const current = index === draft.active, shot = draft.steps[index], allowed = canVisit(draft, index, results)
     const heading = <span className="rally-card-title"><b className="rally-number">{index + 1}</b><strong>{titleAt(draft, index)}</strong></span>
     if (!current) return <button type="button" className={`rally-card closed${allowed ? '' : ' future'}`} disabled={!allowed} onClick={() => { update(value => goTo(value, index)); setServePart(null) }} aria-label={`第${index + 1}板，${titleAt(draft, index)}`}>{heading}<span className="rally-summary">{shot ? shotName(shot, actorAt(draft, index), draft) : '待选择'}</span></button>
-    return <section className="rally-card open" aria-current="step" aria-label={`第${index + 1}板，${titleAt(draft, index)}，在${actorAt(draft, index) === 'me' ? '左' : '右'}侧选择`}>
+    return <section className={"rally-card open" + (stancePreview && !index ? " adjusting-stance" : "")} aria-current="step" aria-label={`第${index + 1}板，${titleAt(draft, index)}，在${actorAt(draft, index) === 'me' ? '左' : '右'}侧选择`}>
       <header className="rally-card-heading">{heading}<span>轮到{roleName(actorAt(draft, index))}</span></header>
-      <div className="rally-card-fields">{index === 0 ? <ServeEditor draft={draft} onChange={patch => update(value => updateServe(value, patch))} part={servePart} setPart={setServePart} /> : <DecisionEditor key={`${mode}-${index}`} draft={draft} results={results} options={options} onChoose={choose} onCustom={() => setDialog('custom')} />}
+      <div className="rally-card-fields">{index === 0 ? <ServeEditor draft={draft} onChange={patch => update(value => updateServe(value, patch))} part={servePart} setPart={setServePart} setPreview={setStancePreview} /> : <DecisionEditor key={`${mode}-${index}`} draft={draft} results={results} options={options} onChoose={choose} onCustom={() => setDialog('custom')} />}
         {status.error && <div className="rally-inline-error" role="alert"><p>{status.error}</p>{status.invalidIndex >= 0 && status.invalidIndex !== index && <button type="button" onClick={() => update(value => goTo(value, status.invalidIndex))}>返回第 {status.invalidIndex + 1} 板</button>}</div>}
       </div>
       <button className="rally-next" type="button" disabled={!status.ready || (index === TRACKS[mode].length - 1 && !status.complete)} onClick={next}>{index === TRACKS[mode].length - 1 ? <><Bookmark size={14}/>保存套路</> : <>{actorAt(draft, index + 1) === 'me' && <ArrowLeft size={14}/>}轮到{roleName(actorAt(draft, index + 1))}{actorAt(draft, index + 1) !== 'me' && <ArrowRight size={14}/>}</>}</button>
     </section>
   }
-  function destination(index) { return draft.steps[index] || index === draft.active ? <HalfTable draft={draft} index={index} onPoint={point}/> : <div/> }
+  function destination(index) {
+    if (stancePreview && index === 0 && draft.active === 0) return <StancePreview draft={draft}/>
+    return draft.steps[index] || index === draft.active ? <HalfTable draft={draft} index={index} ball={results[index]} choosingLanding={!index && draft.active === 0 && !!draft.setup.spin && !servePart && !draft.setup.zone} onPoint={point}/> : <div/> }
   return <div className="rally-app">
     <header className="rally-topbar"><div className="rally-brand"><img src="./favicon.svg" width="26" height="26" alt=""/><strong>套路分析</strong></div><button className="rally-library-button" type="button" onClick={() => setManager('library')}><Library size={17}/>套路库</button></header>
     <main className="rally-main">
