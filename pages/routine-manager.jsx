@@ -100,7 +100,7 @@ export function ShareRoutineDialog({ item, close }) {
     <strong className="routine-share-title">{item.title}</strong>
     {item.note && <label className="routine-check"><input type="checkbox" checked={includeNote} onChange={event => setIncludeNote(event.target.checked)}/>附上实战笔记</label>}
     <textarea ref={output} className="routine-json" aria-label="套路 JSON" readOnly value={json} rows={7} spellCheck={false}/>
-    <p className="routine-muted">球友可在原网站或此页面的套路库导入这份 JSON。</p>
+    <p className="routine-muted">球友可在原网站或此页面的套路笔记本导入这份 JSON。</p>
     <div className="routine-actions">
       <button type="button" className="routine-button routine-primary" onClick={copy}><Copy size={16}/>复制 JSON</button>
       <button type="button" className="routine-button" onClick={download}><Download size={16}/>下载文件</button>
@@ -138,7 +138,7 @@ export function ImportRoutineDialog({ close, onImported }) {
     <label className="routine-field"><span>或粘贴 JSON</span><textarea aria-label="粘贴套路 JSON" value={raw} rows={5} spellCheck={false} maxLength={importLimit} disabled={busy} onChange={event => { reading.current++; setRaw(event.target.value); setItem(null); setError("") }} placeholder="粘贴球友分享的完整套路 JSON"/></label>
     {item && <div className="routine-import-preview"><strong>{item.title}</strong><p className="routine-muted">{modeNames[item.mode]} · 我方{handName(item.myHand)} · 对手{handName(item.hand)}</p><RouteSummary item={item}/>{item.note && <p className="routine-note">{item.note}</p>}</div>}
     {error && <p role="alert" className="routine-error">{error}</p>}
-    <div className="routine-actions">{item ? <button type="button" className="routine-button routine-primary" disabled={busy} onClick={save}><Check size={16}/>{busy ? "正在导入…" : "加入我的套路库"}</button> : <button type="button" className="routine-button routine-primary" disabled={!raw.trim() || busy} onClick={() => preview(raw)}>预览套路</button>}</div>
+    <div className="routine-actions">{item ? <button type="button" className="routine-button routine-primary" disabled={busy} onClick={save}><Check size={16}/>{busy ? "正在导入…" : "加入我的套路笔记本"}</button> : <button type="button" className="routine-button routine-primary" disabled={!raw.trim() || busy} onClick={() => preview(raw)}>预览套路</button>}</div>
   </div></Modal>
 }
 
@@ -238,7 +238,7 @@ export default function RoutineManager({ open, onClose, onOpen, draftToSave, onS
     finally { setBackupAction(null) }
   }
   return <>
-    <Modal title="套路库" close={onClose} busy={Boolean(backupAction)} wide>
+    <Modal title="套路笔记本" close={onClose} busy={Boolean(backupAction)} wide>
       <div className="routine-library-heading">
         <p className="routine-muted">保存在当前浏览器。</p>
         <div className="routine-actions">
@@ -249,7 +249,7 @@ export default function RoutineManager({ open, onClose, onOpen, draftToSave, onS
           <button type="button" className="routine-button" disabled={pending || Boolean(backupAction) || !records.length}
             onClick={exportAll}><Download size={16}/>{backupAction === "export" ? "正在导出…" : "导出全部"}</button>
           <input ref={backupInput} type="file" accept=".json,application/json" hidden onChange={importAll}/>
-          <button type="button" className="routine-icon-button" aria-label="刷新套路库" disabled={pending} onClick={reload}><RefreshCw size={17} className={pending ? "routine-spinning" : ""}/></button>
+          <button type="button" className="routine-icon-button" aria-label="刷新套路笔记本" disabled={pending} onClick={reload}><RefreshCw size={17} className={pending ? "routine-spinning" : ""}/></button>
         </div>
       </div>
       <div className="routine-library-controls"><div className="routine-segments" role="group" aria-label="筛选套路模式">{[["all", "全部"], ["serve", "我发球"], ["receive", "我接发"]].map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => setMode(value)}>{label}</button>)}</div><label className="routine-search"><Search size={16}/><input aria-label="搜索套路" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索名称、技术、落点或笔记"/></label><select aria-label="按分类筛选" value={category} onChange={event => setCategory(event.target.value)}><option value="*">全部分类</option><option value="">未分类</option>{category && category !== "*" && !categories.includes(category) && <option value={category}>{category}</option>}{categories.map(value => <option key={value} value={value}>{value}</option>)}</select></div>
