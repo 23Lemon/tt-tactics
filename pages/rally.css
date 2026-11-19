@@ -40,12 +40,23 @@
 
 
 .rally-custom-form .rally-check input{width:17px;height:17px;min-height:0;flex:0 0 17px;margin:0;padding:0}
+.rally-topbar{gap:12px}
+.rally-brand{min-width:0;gap:8px}
+.rally-brand img,.rally-library-button,.rally-library-button svg{flex-shrink:0}
+.rally-library-button{white-space:nowrap}
+.rally-field-toggle{padding-inline-start:clamp(11px,2vw,15px)}
 .rally-field-toggle[aria-expanded=true]{background:#e0eee5;border-color:#59866c;box-shadow:inset 3px 0 #30654a}
 .rally-field-toggle[aria-expanded=true]>span,.choosing-landing .half-zone-name{color:#245c42;font-weight:650}
 .choosing-landing .half-target{outline:2px solid #638f72;outline-offset:2px}
-/* The overlay occupies only the space above the stance sliders. */
-.show-stance .rally-destination,.show-stance .rally-arrow{visibility:hidden}
-.adjusting-stance .rally-field,.adjusting-stance .rally-disclosure summary,.adjusting-stance label:has(select){opacity:.14;filter:blur(3px)}
-.stance-overlay{position:absolute;z-index:4;inset-inline:0;top:var(--stance-top,46px);height:var(--stance-height,220px);display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;background:linear-gradient(180deg,transparent,#f7f9f4b8 12%,#f7f9f4c9 85%,transparent)}
-.stance-overlay svg{width:100%;min-height:0;max-height:calc(100% - 24px);display:block}
-.stance-overlay small{font-size:12px;color:#244935;background:#f6f8f3e8;border-radius:4px;padding:1px 6px}
+/* The added half uses the target's own coordinate system. Its layer sits above
+   the dimmed controls, with the original net above both halves. */
+.rally-exchanges:before{z-index:5}
+.rally-arrow{z-index:6}
+.rally-serve-turn .rally-destination{z-index:auto}
+.rally-serve-turn .half-view{position:relative;left:calc(-1 * var(--rally-net-width)/2);transform:none}
+.stance-extension{position:absolute;inset:0;z-index:4;display:block;width:100%;height:100%;overflow:visible;pointer-events:none;opacity:0;transition:opacity 240ms ease}
+.show-stance .stance-extension{opacity:1}
+.rally-serve-turn :is(.half-depths,.half-lanes,.half-zone-name,.half-empty-marker,.rally-arrow){transition:opacity 200ms ease}
+.show-stance :is(.half-depths,.half-lanes,.half-zone-name,.half-empty-marker,.rally-arrow){opacity:0}
+.rally-serve-turn :is(.rally-field,.rally-serve-settings summary,.rally-advanced-fields label:has(select)){transition:opacity 220ms ease,filter 220ms ease}
+.show-stance :is(.rally-field,.rally-serve-settings summary,.rally-advanced-fields label:has(select)){opacity:.14;filter:blur(2px)}

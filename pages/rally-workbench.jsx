@@ -51,29 +51,36 @@ function RallyFlight({ ball, receiver }) {
   </g>
 }
 
-function StancePreview({ draft, ball }) {
+function TableSurface({ start = 0, row = -1, column = -1 }) {
+  return <>
+    <rect x={start} y="4" width="104" height="92" className="half-surface" />
+    {row >= 0 && column >= 0 && <rect x={start + column * 52} y={4 + row * 92 / 3} width="52" height={92 / 3} className="half-selected" />}
+    <path d={`M${start + 52} 4V96 M${start} ${4 + 92 / 3}h104 M${start} ${4 + 184 / 3}h104`} className="half-grid" vectorEffect="non-scaling-stroke" />
+    <rect x={start} y="4" width="104" height="92" className="half-outline" vectorEffect="non-scaling-stroke" />
+  </>
+}
+
+function StancePreview({ draft, ball, receiver }) {
   const actor = actorAt(draft, 0)
-  const [x, y] = positionOnTable(serveOrigin(draft.setup, actor, draft))
-  const edge = actor === 'me' ? -104 : 104
-  const distance = contactSetbackCm(draft.setup.distance)
-  const track = ball?.points?.map(state => positionOnTable(state.p)) ?? []
-  const bounce = ball?.serviceBounce && positionOnTable(ball.serviceBounce)
-  const landing = ball?.valid && ball.landing && positionOnTable(ball.landing)
-  const marker = 'stance' + useId().replace(/[^a-zA-Z0-9_-]/g, '')
-  return <div className="stance-overlay" role="img" aria-label={roleName(actor) + '触球点在端线后' + distance + '厘米，' + servePositionName(draft.setup.position)}>
-    <svg viewBox="-131 -8 262 115" aria-hidden="true">
-      <defs><marker id={marker} viewBox="0 0 8 8" refX="6" refY="4" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#ffda93"/></marker></defs>
-      <rect x="-104" y="4" width="208" height="92" rx="1" fill="#264b3a"/>
-      <path d="M-104 50H104 M-52 4V96 M52 4V96" fill="none" stroke="#789a85" strokeWidth=".6" strokeDasharray="2 2"/>
-      <path d="M0 2V98" stroke="#d4e4d9" strokeWidth="1.4"/>
-      {track.length > 1 && <polyline points={track.join(' ')} fill="none" stroke="#ffda93" strokeWidth="1.4" markerEnd={'url(#' + marker + ')'}/>}
-      {bounce && <circle cx={bounce[0]} cy={bounce[1]} r="1.9" fill="#ffda93"/>}
-      {landing && <circle cx={landing[0]} cy={landing[1]} r="2.6" stroke="#ffda93" fill="#264b3a"/>}
-      <path d={`M${edge} ${y}H${x}`} stroke="#8f733a" strokeWidth="1.4" strokeDasharray="1.5 1"/>
-      <circle cx={x} cy={y} r="3.7" fill="#f9b957" stroke="#324338" strokeWidth="1.1"/>
-    </svg>
-    <small>触球点 · {servePositionName(draft.setup.position)} · 端线后 {distance} 厘米</small>
-  </div>
+  const offset = receiver === 'me' ? 104 : 0
+  const start = receiver === 'me' ? 104 : -104
+  const edge = receiver === 'me' ? 208 : -104
+  const xy = point => {
+    const [x, y] = positionOnTable(point)
+    return [x + offset, y]
+  }
+  const [x, y] = xy(serveOrigin(draft.setup, actor, draft))
+  const track = ball?.points?.map(state => xy(state.p)) ?? []
+  const bounce = ball?.serviceBounce && xy(ball.serviceBounce)
+  const clip = 'stance' + useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  return <svg className="stance-extension" viewBox="0 0 104 100" aria-hidden="true">
+    <defs><clipPath id={clip}><rect x={start} y="4" width="104" height="92"/></clipPath></defs>
+    <TableSurface start={start}/>
+    {track.length > 1 && <polyline points={track.join(' ')} clipPath={`url(#${clip})`} fill="none" stroke="#ffd686" strokeWidth="1.35"/>}
+    {bounce && <circle cx={bounce[0]} cy={bounce[1]} r="1.9" fill="#ffd686"/>}
+    <path d={`M${edge} ${y}H${x}`} stroke="#b78c4e" strokeWidth="1.25" strokeDasharray="1.5 1"/>
+    <circle cx={x} cy={y} r="3.4" fill="#f9b957" stroke="#324338" strokeWidth="1.1"/>
+  </svg>
 }
 
 function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
@@ -97,10 +104,7 @@ function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
     onPoint(index, clamp((view.u ?? .5) + direction[0] * step), clamp((view.v ?? .5) + direction[1] * step))
   }
   const graphic = <svg className="half-table-svg" viewBox="0 0 104 100" aria-hidden="true">
-    <rect x="0" y="4" width="104" height="92" className="half-surface" />
-    {row >= 0 && column >= 0 && <rect x={column * 52} y={4 + row * 92 / 3} width="52" height={92 / 3} className="half-selected" />}
-    <path d={`M52 4V96 M0 ${4 + 92 / 3}H104 M0 ${4 + 184 / 3}H104`} className="half-grid" vectorEffect="non-scaling-stroke" />
-    <rect x="0" y="4" width="104" height="92" className="half-outline" vectorEffect="non-scaling-stroke" />
+    <TableSurface row={row} column={column}/>
     <line x1={me ? 104 : 0} y1="1" x2={me ? 104 : 0} y2="99" className="half-net" vectorEffect="non-scaling-stroke" />
     <RallyFlight ball={ball} receiver={view.receiver}/>
     {view.u !== null && <circle cx={view.u * 104} cy={4 + view.v * 92} r="2.8" className="half-dot" />}
@@ -110,7 +114,7 @@ function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
       <div className="half-depths">{view.depths.map(depth => <span key={depth}>{depthLabels[depth]}</span>)}</div>
       <div className="half-lanes">{view.lanes.map(lane => <span key={lane}>{laneLabels[lane]}</span>)}</div>
       {current ? <button className="half-target" type="button" aria-label={`在${roleName(view.receiver)}半台点选落点，当前${zoneName(view.zone) || '未选择'}，方向键微调`} disabled={!ready} onClick={pick} onKeyDown={keydown}>
-        {graphic}{ready && view.u === null && <Crosshair size={18} className="half-empty-marker" aria-hidden="true" />}
+        {graphic}{index === 0 && draft.setup.family && <StancePreview draft={draft} ball={ball} receiver={view.receiver}/>}{ready && view.u === null && <Crosshair size={18} className="half-empty-marker" aria-hidden="true" />}
       </button> : <div className="half-target">{graphic}</div>}
       <strong className="half-zone-name" aria-live={current ? 'polite' : 'off'}>{zoneName(view.zone) || (choosingLanding ? '请点选落点' : '待选落点')}</strong>
     </figure>
@@ -242,7 +246,7 @@ export default function RallyWorkbench() {
   function update(transform) { setDrafts(old => ({ ...old, [mode]: transform(old[mode]) })); setAdjustment('read'); setMessage('') }
   function point(index, u, v) { update(value => moveLanding(value, index, u, v)) }
   function choose(option) { try { const nextDraft = chooseStroke(draft, draft.active, option); setDrafts(old => ({ ...old, [mode]: nextDraft })); setAdjustment('read'); setMessage(''); setDialog(null) } catch (error) { setMessage(error.message) } }
-  function changeMode(value) { setMode(value); setDialog(null); setServePart(null); setAdjustment('read') }
+  function changeMode(value) { setMode(value); setDialog(null); setServePart(null); setAdjustment('read'); setStancePreview(false) }
   function changeHands(patch) { setDrafts(old => Object.fromEntries(Object.entries(old).map(([key, value]) => [key, setHands(value, key === mode ? patch : Object.hasOwn(patch, 'myHand') ? { myHand: patch.myHand } : {})]))); setServePart(null) }
   function changeRubber(actor, face, id) {
     setDrafts(old => Object.fromEntries(Object.entries(old).map(([key, value]) =>
@@ -263,15 +267,11 @@ export default function RallyWorkbench() {
         const source = row.querySelector('.rally-card'), destination = row.querySelector('.rally-destination'), table = row.querySelector('.half-table-svg'), arrow = row.querySelector('.rally-arrow')
         if (!source || !destination || !table || !arrow) return
         const s = source.getBoundingClientRect(), d = destination.getBoundingClientRect(), t = table.getBoundingClientRect()
-        const range = source.querySelector('input[type="range"]')?.closest('label')
-        if (range && row.classList.contains('show-stance')) {
-          const top = source.querySelector('header').getBoundingClientRect().bottom - row.getBoundingClientRect().top
-          row.style.setProperty('--stance-top', top + 'px')
-          row.style.setProperty('--stance-height', Math.max(0, range.getBoundingClientRect().top - row.getBoundingClientRect().top - top - 6) + 'px')
-        }
         const tableCenter = t.top - d.top + t.height / 2
-        const center = Math.max(s.height / 2, tableCenter)
-        source.style.marginTop = `${center - s.height / 2}px`
+        const range = source.querySelector('.rally-serve-settings[open] input[type="range"]')?.closest('label')
+        const preferredCenter = range ? range.getBoundingClientRect().top - s.top - t.height * .46 - 8 : s.height / 2
+        const center = Math.max(preferredCenter, tableCenter)
+        source.style.marginTop = `${range ? 0 : center - s.height / 2}px`
         destination.style.marginTop = `${center - tableCenter}px`
         arrow.style.marginTop = `${center - 12}px`
       })
@@ -283,8 +283,9 @@ export default function RallyWorkbench() {
       frame = requestAnimationFrame(align)
     })
     observer.observe(rally.current)
+    rally.current.querySelectorAll('.rally-card, .rally-destination').forEach(item => observer.observe(item))
     return () => { observer.disconnect(); cancelAnimationFrame(frame) }
-  }, [draft, options, status.error, stancePreview])
+  }, [draft, options, status.error])
 
   const saveDraft = { mode, myHand: draft.myHand, hand: draft.hand, steps: buildSteps(draft), ...(draft.saved ? { id: draft.saved.id, revision: draft.saved.revision, title: draft.saved.title, note: draft.saved.note, category: draft.saved.category, status: draft.saved.status } : {}) }
   const focus = Math.max(0, Math.min(draft.active, draft.steps.length - 1))
@@ -293,7 +294,7 @@ export default function RallyWorkbench() {
     const current = index === draft.active, shot = draft.steps[index], allowed = canVisit(draft, index, results)
     const heading = <span className="rally-card-title"><b className="rally-number">{index + 1}</b><strong>{titleAt(draft, index)}</strong></span>
     if (!current) return <button type="button" className={`rally-card closed${allowed ? '' : ' future'}`} disabled={!allowed} onClick={() => { update(value => goTo(value, index)); setServePart(null) }} aria-label={`第${index + 1}板，${titleAt(draft, index)}`}>{heading}<span className="rally-summary">{shot ? shotName(shot, actorAt(draft, index), draft) : '待选择'}</span></button>
-    return <section className={"rally-card open" + (stancePreview && !index ? " adjusting-stance" : "")} aria-current="step" aria-label={`第${index + 1}板，${titleAt(draft, index)}，在${actorAt(draft, index) === 'me' ? '左' : '右'}侧选择`}>
+    return <section className="rally-card open" aria-current="step" aria-label={`第${index + 1}板，${titleAt(draft, index)}，在${actorAt(draft, index) === 'me' ? '左' : '右'}侧选择`}>
       <header className="rally-card-heading">{heading}<span>轮到{roleName(actorAt(draft, index))}</span></header>
       <div className="rally-card-fields">{index === 0 ? <ServeEditor draft={draft} onChange={patch => update(value => updateServe(value, patch))} part={servePart} setPart={setServePart} setPreview={setStancePreview} /> : <DecisionEditor key={`${mode}-${index}`} draft={draft} results={results} options={options} onChoose={choose} onCustom={() => setDialog('custom')} />}
         {status.error && <div className="rally-inline-error" role="alert"><p>{status.error}</p>{status.invalidIndex >= 0 && status.invalidIndex !== index && <button type="button" onClick={() => update(value => goTo(value, status.invalidIndex))}>返回第 {status.invalidIndex + 1} 板</button>}</div>}
@@ -304,23 +305,22 @@ export default function RallyWorkbench() {
   function destination(index) {
     return draft.steps[index] || index === draft.active ? <HalfTable draft={draft} index={index} ball={results[index]} choosingLanding={!index && draft.active === 0 && !!draft.setup.spin && !servePart && !draft.setup.zone} onPoint={point}/> : <div/> }
   return <div className="rally-app">
-    <header className="rally-topbar"><div className="rally-brand"><img src="./favicon.svg" width="26" height="26" alt=""/><strong>套路分析</strong></div><button className="rally-library-button" type="button" onClick={() => setManager('library')}><Library size={17}/>套路库</button></header>
+    <header className="rally-topbar"><div className="rally-brand"><img src="./favicon.svg" width="26" height="26" alt=""/><strong>发接发套路分析</strong></div><button className="rally-library-button" type="button" onClick={() => setManager('library')}><Library size={17}/>套路笔记本</button></header>
     <main className="rally-main">
       <div className="rally-toolbar"><Segments label="分析模式" values={{ serve: '我发球', receive: '我接发' }} value={mode} onChange={changeMode}/><div className="rally-top-actions"><button type="button" aria-label="开始新套路" onClick={newRoutine}><RotateCcw size={16}/></button><button type="button" aria-label="双方设置" onClick={() => setDialog('players')}><Settings2 size={17}/></button></div></div>
       <div className="rally-context-actions"><button type="button" onClick={showIdeas}><Compass size={14}/>找新套路</button><button type="button" disabled={!draft.steps.length} onClick={() => { setAdjustment('read'); setDialog('court') }}>球路详情<ArrowRight size={13}/></button></div>
       <section className="rally-sides" aria-label="双方持拍手与胶皮">{['me', 'opponent'].map(actor => <button key={actor} type="button" onClick={() => setDialog('players')}><span><UserRound size={18}/><strong>{roleName(actor)}</strong></span><small>{handName(playerHand(actor, draft))} · {rubberName(rubberFor(draft, actor, 'fh'))}／{rubberName(rubberFor(draft, actor, 'bh'))}</small></button>)}<span className="rally-net-label">球网</span></section>
       <div className="rally-exchanges" ref={rally} aria-label="球网两侧的逐板选择">
-        {TRACKS[mode].map((_, index) => <div className={`rally-turn${index === draft.active ? ' current' : ''}${stancePreview && !index && !draft.active ? ' show-stance' : ''}`} key={`${mode}-${index}`}>
+        {TRACKS[mode].map((_, index) => <div className={`rally-turn${index === draft.active ? ' current' : ''}${index === 0 ? ' rally-serve-turn' : ''}${stancePreview && index === 0 && draft.active === 0 ? ' show-stance' : ''}`} key={`${mode}-${index}`}>
           {actorAt(draft, index) === 'me' ? actionCard(index) : destination(index)}
           <div className="rally-arrow" aria-hidden="true">{(draft.steps[index] || index === draft.active) && (actorAt(draft, index) === 'me' ? <ArrowRight size={24}/> : <ArrowLeft size={24}/>)}</div>
           {actorAt(draft, index) === 'opponent' ? actionCard(index) : destination(index)}
-          {stancePreview && !index && !draft.active && <StancePreview draft={draft} ball={results[0]}/>}
         </div>)}
       </div>
       <footer className="rally-page-footer"><span>{draft.saved ? '正在编辑已存套路' : `${mode === 'serve' ? '三' : '四'}板衔接`}</span><button type="button" onClick={() => setDialog('about')}><Info size={13}/>关于推荐</button></footer>
     </main>
     {message && <div className="rally-toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="关闭提示"><X size={16}/></button></div>}
-    <RoutineManager open={manager} onClose={() => setManager(null)} draftToSave={saveDraft} onOpen={openRoutine} onSaved={item => { setManager(null); setDrafts(old => ({ ...old, [item.mode]: createDraft(item.mode, item.myHand, item.hand, item.steps[0].rubbers) })); setServePart('family'); setMessage('已保存到套路库'); refreshRecords() }}/>
+    <RoutineManager open={manager} onClose={() => setManager(null)} draftToSave={saveDraft} onOpen={openRoutine} onSaved={item => { setManager(null); setDrafts(old => ({ ...old, [item.mode]: createDraft(item.mode, item.myHand, item.hand, item.steps[0].rubbers) })); setServePart('family'); setMessage('已保存到套路笔记本'); refreshRecords() }}/>
     {dialog === 'custom' && <CustomTechnique draft={draft} results={results} close={() => setDialog(null)} choose={choose}/>}
     {dialog === 'players' && <PlayerSettings draft={draft} preferences={preferences} onHands={changeHands} onRubber={changeRubber} close={() => setDialog(null)}/>}
     {dialog === 'ideas' && <Modal title="找新套路" close={() => setDialog(null)} wide><div className="rally-ideas">{[['openers', '试试这些开局'], ['branches', '同一发球换种接法']].map(([key, title]) => <section key={key}><h3>{title}</h3>{ideas?.[key]?.length ? ideas[key].map((idea, i) => <article key={i}><RouteSummary mode={mode} hands={draft} steps={idea.steps}/><p>{idea.reason}</p><button type="button" className="rally-button" onClick={() => { update(value => applySteps(value, idea.steps)); setServePart(null); setDialog(null) }}>查看线路<ArrowRight size={14}/></button></article>) : <p className="rally-muted">当前条件暂无新组合。</p>}</section>)}</div></Modal>}
