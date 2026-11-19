@@ -26,7 +26,7 @@ export async function routineStore(method = "GET", body) {
     }
     transaction.onabort = () => {
       database.close()
-      reject(failure ?? new Error("无法更新浏览器的套路库，请重试。"))
+      reject(failure ?? transaction.error ?? new Error("无法更新浏览器的套路库，请重试。"))
     }
 
     if (method === "GET") {
@@ -34,6 +34,11 @@ export async function routineStore(method = "GET", body) {
       request.onsuccess = () => {
         result = { items: request.result.sort((a, b) => b.updatedAt - a.updatedAt) }
       }
+      return
+    }
+
+    if (method === "IMPORT") {
+      for (const item of body) store.add(item)
       return
     }
 

@@ -4,7 +4,7 @@ import { contactSetbackCm, storedServeDistance, SERVE_DISTANCE, SERVE_POSITION_L
 import { RUBBERS, rubberFor } from '../lib/table-tennis/rubbers.mjs'
 import { COURT, serveOrigin, secondBounceDescription, spinDescription } from '../lib/table-tennis/physics.mjs'
 import { assessStroke, techniqueDescription } from '../lib/table-tennis/tactics.mjs'
-import { receiveGroups } from '../lib/table-tennis/repertoire.mjs'
+import { availableReceiveGroups, checkedReceiveGroups, noReceiveGroups } from '../lib/table-tennis/repertoire.mjs'
 import { Modal, RouteSummary } from '../app/routine-controls.jsx'
 import Court from '../app/court.jsx'
 import { usePreferences } from '../app/use-preferences.js'
@@ -185,7 +185,15 @@ const rubberName = id => RUBBERS[id].shortName ?? RUBBERS[id].name
 
 function PlayerSettings({ draft, preferences, onHands, onRubber, close }) {
   const [groups, setGroups] = useState(null)
-  const selectedGroups = groups ?? preferences.snapshot?.groups ?? EMPTY_GROUPS
+  const selectedGroups = checkedReceiveGroups(groups ?? preferences.snapshot?.groups)
+  const availableGroups = availableReceiveGroups(draft)
+  function toggleGroup(key) {
+    setGroups(old => {
+      const current = checkedReceiveGroups(old ?? preferences.snapshot?.groups)
+      const next = current.includes(key) ? current.filter(group => group !== key) : [...current, key]
+      return next.length ? next : [noReceiveGroups]
+    })
+  }
   return <Modal title="双方设置" close={close}>
     <div className="rally-settings-form">
       {['me', 'opponent'].map(actor => <fieldset className="rally-player-settings" key={actor}>
@@ -200,9 +208,16 @@ function PlayerSettings({ draft, preferences, onHands, onRubber, close }) {
           </select><ChevronDown size={14} aria-hidden="true"/></span>{RUBBERS[rubber].description && <small>{RUBBERS[rubber].description}</small>}</label>
         })}</div>
       </fieldset>)}
-      <details><summary>对手常用接法</summary><div className="rally-preferences">{receiveGroups.map(([key, title]) => <label key={key}><input type="checkbox" checked={selectedGroups.includes(key)} disabled={!preferences.snapshot || preferences.busy} onChange={() => setGroups(old => { const current = old ?? preferences.snapshot?.groups ?? EMPTY_GROUPS; return current.includes(key) ? current.filter(x => x !== key) : [...current, key] })}/>{title}</label>)}</div><p className="rally-muted">留空显示全部；用于预判对手如何接你的发球。</p></details>
+      <details>
+        <summary>对手常用解法</summary>
+        <p className="rally-muted">默认所有技术对方都可能使用；可取消对方不使用的技术</p>
+        <div className="rally-preferences">{availableGroups.map(([key, title]) =>
+          <label key={key}><input type="checkbox" checked={selectedGroups.includes(key)}
+            disabled={!preferences.snapshot || preferences.busy} onChange={() => toggleGroup(key)}/>{title}</label>
+        )}</div>
+      </details>
       {preferences.error && <p className="rally-error" role="alert">{preferences.error}</p>}
-      <button className="rally-button primary" type="button" disabled={preferences.busy} onClick={async () => { if (groups === null || await preferences.save(preferences.snapshot, selectedGroups)) close() }}>{preferences.busy ? '保存中…' : '完成'}</button>
+      <button className="rally-button primary" type="button" disabled={preferences.busy} onClick={async () => { if (groups === null || await preferences.save(preferences.snapshot, groups)) close() }}>{preferences.busy ? '保存中…' : '完成'}</button>
     </div>
   </Modal>
 }

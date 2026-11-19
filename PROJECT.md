@@ -7,7 +7,8 @@
 ## 产品流程
 
 - **我发球（`serve`）**。我发球 → 对手接发 → 我的第三板。对手接发建议用于提前预判。
-- **我接发（`receive`）**。对手发球 → 我接发 → 对手第三板 → 我的第四板。对手常用接法设置只用于对手的第二板，和我方能力无关。
+- **我接发（`receive`）**。对手发球 → 我接发 → 对手第三板 → 我的第四板。
+- 「对手常用解法」用于「我发球」模式的第二板自动建议。选项按对手正反手的实际胶面显示，默认全选。可取消对方不用的技术。
 - 新草稿默认空白，双方默认右手，可独立切换左右手。我方始终在左，对手始终在右，正反手区和侧旋随持拍手换向。
 - 「双方设置」可分别配置双方正反手胶皮，默认双反。推荐和球路计算使用本板实际击球面，直拍反手推挡使用正手胶面。
 - 发球按手法、旋转、落点渐进选择。顺旋、逆旋、勾手、反手按目录提供合法组合。右手顺旋为左侧旋系，逆旋、勾手、反手的侧旋分支为右侧旋系，左手镜像。顺旋的不转是保留的变化。纯下旋与不转归「转不转」，无侧旋的上旋归「奔球」。反手还保留纯下旋。
@@ -35,7 +36,7 @@
 | [lib/table-tennis/physics.mjs](lib/table-tennis/physics.mjs) | 三维飞行、球台及胶面碰撞、轨迹逆解、球速旋转和可用触球窗口、二跳和出边。 |
 | [lib/table-tennis/tactics.mjs](lib/table-tennis/tactics.mjs) | `readIncoming` 提取来球状态，`assessStroke` 判断适用性，`optionsFor` 检查可行线路并排序，`findIdeas` 推演未保存的套路。 |
 | [lib/table-tennis/repertoire.mjs](lib/table-tennis/repertoire.mjs) · [preferences.mjs](lib/table-tennis/preferences.mjs) | 偏好组 ID 和技术映射，浏览器偏好及账号同步协议。 |
-| [lib/table-tennis/sharing.mjs](lib/table-tennis/sharing.mjs) | 两版通用单条 JSON 导入、导出与净化。 |
+| [lib/table-tennis/sharing.mjs](lib/table-tennis/sharing.mjs) | 单条分享及套路库备份的 JSON 导入、导出与校验。 |
 | [pages/rally-domain.mjs](pages/rally-domain.mjs) | 草稿状态、逐板推进、回退、落点镜像、连续坐标、上游修改的后续失效、分析结果缓存。Site 有相应的 `app/rally/rally-domain.mjs`。 |
 | [pages/rally-workbench.jsx](pages/rally-workbench.jsx) · [pages/rally.css](pages/rally.css) · [app/court.jsx](app/court.jsx) | 逐板视图、半台交互和实时站位预览，完整球台由两版共用。 |
 | [pages/routine-manager.jsx](pages/routine-manager.jsx) · [pages/storage.mjs](pages/storage.mjs) · [pages/routine-store.mjs](pages/routine-store.mjs) | Pages 套路库界面、存储适配层和 IndexedDB 事务。 |
@@ -52,6 +53,8 @@
 非反胶配置随发球步骤的可选 `rubbers` 字段保存。双方各击球面缺省为反胶，双反记录沿用原 v1 字段，账号库继续使用步骤 JSON。
 
 **分享与同步。** JSON 形如 `{ format: "tt-tactics/routine", version: 1, routine: { … } }`，包含名称、模式、双方手别、状态、分类、笔记和完整步骤。默认分享省略笔记内容，用户可主动勾选。导入生成独立套路，分享不携带账号、记录 ID 或 revision。Site 的 D1 套路表和偏好表按服务器确认的 ChatGPT 用户 ID 隔离，写操作用 revision 处理跨设备并发。账号尚未设置偏好时可一次性导入该站点浏览器中的旧偏好。
+
+**全量备份。** Pages 套路库的「导出全部」下载 `{ format: "tt-tactics/routine-library", version: 1, routines: […] }`，包含所有模式、分类和笔记。「导入全部」校验后使用一个 IndexedDB 事务追加新记录。再次导入同一份文件会再次追加。
 
 **推荐链路。** 模型先求实际飞行和落台，区分首落点与二跳留台、侧边出台、底线出台。落台后的球速、上下旋和侧旋、触球高度、引拍空间、来球压力、接球方手别和侧向位移共同决定候选。发球名和目标区只提供输入。候选通过适用性判断后还要模拟回球，核对是否上台、是否落在推荐区、二跳长度和落点误差。常规接法先于高难度的有条件接法。「正确处理」的真实轨迹用于后续板次；误读旋转的对比供分析查看。
 

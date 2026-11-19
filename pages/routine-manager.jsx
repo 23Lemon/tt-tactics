@@ -1,12 +1,32 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { ArrowLeft, ArrowUpRight, Bookmark, Check, Copy, Download, Folder, Plus, RefreshCw, Search, Share2, Trash2, Upload, X } from "lucide-react"
 import { handName, openingKey, playerHand, shotActor, shotName, zoneName } from "../lib/table-tennis/catalog.mjs"
-import { exportRoutine, importRoutine, importLimit } from "../lib/table-tennis/sharing.mjs"
-import { deleteRoutine, listRoutines, saveRoutine, subscribeRoutines } from "./storage.mjs"
+import { exportRoutine, exportRoutineLibrary, importRoutine, importLimit } from "../lib/table-tennis/sharing.mjs"
+import { deleteRoutine, listRoutines, restoreRoutineLibrary, saveRoutine, subscribeRoutines } from "./storage.mjs"
 import "./routines.css"
 
 const modeNames = { serve: "我发球", receive: "我接发" }
 const statuses = { practice: "想练", using: "在用" }
+
+function downloadJson(json, filename) {
+  const url = URL.createObjectURL(new Blob([json], { type: "application/json" }))
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function nativeShareData(json, title, filename) {
+  if (typeof navigator.share !== "function" || typeof navigator.canShare !== "function") return null
+  const file = new File([json], filename, { type: "application/json" })
+  const attachment = { files: [file], title }
+  const text = { text: json, title }
+  if (navigator.canShare(attachment)) return attachment
+  return navigator.canShare(text) ? text : null
+}
 
 function Modal({ title, close, busy = false, wide = false, children }) {
   const element = useRef(null)
@@ -75,28 +95,30 @@ export function ShareRoutineDialog({ item, close }) {
   const [includeNote, setIncludeNote] = useState(false)
   const [feedback, setFeedback] = useState("")
   const [busy, setBusy] = useState(false)
+  const [shareUnavailable, setShareUnavailable] = useState(false)
   const output = useRef(null)
   const json = exportRoutine(item, includeNote)
   const filename = (item.title.replace(/[^\p{L}\p{N}._-]+/gu, "-") || "tt-routine") + ".json"
+  const shareData = useMemo(() => shareUnavailable ? null : nativeShareData(json, item.title, filename),
+    [filename, item.title, json, shareUnavailable])
   async function copy() {
     try { if (!navigator.clipboard?.writeText) throw new Error(); await navigator.clipboard.writeText(json); setFeedback("已复制，可发给球友。") }
     catch { output.current?.focus(); output.current?.select(); setFeedback("已选中 JSON，可直接复制。") }
   }
   function download() {
-    const url = URL.createObjectURL(new Blob([json], { type: "application/json" }))
-    const link = document.createElement("a")
-    link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    downloadJson(json, filename)
     setFeedback("已下载套路文件。")
   }
   async function share() {
     setBusy(true); setFeedback("")
     try {
-      const file = new File([json], filename, { type: "application/json" })
-      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: item.title })
-      else await navigator.share({ text: json, title: item.title })
-      setFeedback("已分享。")
-    } catch (problem) { if (problem.name !== "AbortError") setFeedback("当前无法调用系统分享，可以复制 JSON 或下载文件。") }
+      await navigator.share(shareData)
+    } catch (problem) {
+      if (problem.name !== "AbortError") {
+        setShareUnavailable(true)
+        setFeedback("请复制 JSON 或下载文件分享。")
+      }
+    }
     finally { setBusy(false) }
   }
   return <Modal title="分享套路" close={close} busy={busy}><div className="routine-form">
@@ -104,7 +126,7 @@ export function ShareRoutineDialog({ item, close }) {
     {item.note && <label className="routine-check"><input type="checkbox" checked={includeNote} onChange={event => setIncludeNote(event.target.checked)}/>附上实战笔记</label>}
     <textarea ref={output} className="routine-json" aria-label="套路 JSON" readOnly value={json} rows={7} spellCheck={false}/>
     <p className="routine-muted">球友可在原网站或此页面的套路库导入这份 JSON。</p>
-    <div className="routine-actions"><button type="button" className="routine-button routine-primary" onClick={copy}><Copy size={16}/>复制 JSON</button><button type="button" className="routine-button" onClick={download}><Download size={16}/>下载文件</button>{typeof navigator.share === "function" && <button type="button" className="routine-button" disabled={busy} onClick={share}><Share2 size={16}/>系统分享</button>}</div>
+    <div className="routine-actions"><button type="button" className="routine-button routine-primary" onClick={copy}><Copy size={16}/>复制 JSON</button><button type="button" className="routine-button" onClick={download}><Download size={16}/>下载文件</button>{shareData && <button type="button" className="routine-button" disabled={busy} onClick={share}><Share2 size={16}/>系统分享</button>}</div>
     <p className="routine-feedback" role="status">{feedback}</p>
   </div></Modal>
 }
@@ -176,6 +198,9 @@ export default function RoutineManager({ open, onClose, onOpen, draftToSave, onS
   const [mode, setMode] = useState("all")
   const [category, setCategory] = useState("*")
   const [feedback, setFeedback] = useState("")
+  const [backupAction, setBackupAction] = useState(null)
+  const [backupError, setBackupError] = useState("")
+  const backupInput = useRef(null)
   const sequence = useRef(0)
   const reload = useCallback(async () => {
     const current = ++sequence.current
@@ -186,6 +211,7 @@ export default function RoutineManager({ open, onClose, onOpen, draftToSave, onS
   }, [])
   useEffect(() => {
     setFeedback("")
+    setBackupError("")
     if (!view) { setOverlay(null); return }
     reload()
     const unsubscribe = subscribeRoutines(reload)
@@ -209,11 +235,48 @@ export default function RoutineManager({ open, onClose, onOpen, draftToSave, onS
   function saved(item) { onSaved?.(item); onClose?.() }
   if (view === "save") return draftToSave ? <SaveRoutineDialog item={draftToSave} categories={categories} close={onClose} onSaved={saved}/> : <Modal title="保存套路" close={onClose}><p className="routine-error" role="alert">请先完成这条套路的所有板次。</p></Modal>
   function openRecord(item) { if (onOpen?.(item) !== false) onClose?.() }
+  function imported(message) {
+    setOverlay(null); setFeedback(message); setSearch(""); setMode("all"); setCategory("*"); reload()
+  }
+  async function exportAll() {
+    setBackupAction("export"); setBackupError(""); setFeedback("")
+    try {
+      const items = await listRoutines()
+      const date = new Date().toLocaleDateString("sv-SE")
+      downloadJson(exportRoutineLibrary(items), `tt-tactics-${date}.json`)
+      setFeedback(`已导出 ${items.length} 条套路（含笔记）。`)
+    } catch (problem) { setBackupError(problem.message) }
+    finally { setBackupAction(null) }
+  }
+  async function importAll(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+    setBackupAction("import"); setBackupError(""); setFeedback("")
+    try {
+      const count = await restoreRoutineLibrary(await file.text())
+      imported(count ? `已添加 ${count} 条套路。` : "这份备份没有套路。")
+    } catch (problem) { setBackupError(problem.message) }
+    finally { setBackupAction(null) }
+  }
   return <>
-    <Modal title="套路库" close={onClose} wide>
-      <div className="routine-library-heading"><p className="routine-muted">保存在当前浏览器，可导出给球友。</p><div className="routine-actions"><button type="button" className="routine-button" onClick={() => { setFeedback(""); setOverlay({ type: "import" }) }}><Upload size={16}/>导入套路</button><button type="button" className="routine-icon-button" aria-label="刷新套路库" disabled={pending} onClick={reload}><RefreshCw size={17} className={pending ? "routine-spinning" : ""}/></button></div></div>
+    <Modal title="套路库" close={onClose} busy={Boolean(backupAction)} wide>
+      <div className="routine-library-heading">
+        <p className="routine-muted">保存在当前浏览器。</p>
+        <div className="routine-actions">
+          <button type="button" className="routine-button" disabled={Boolean(backupAction)}
+            onClick={() => { setFeedback(""); setBackupError(""); setOverlay({ type: "import" }) }}><Upload size={16}/>导入单条</button>
+          <button type="button" className="routine-button" disabled={Boolean(backupAction)}
+            onClick={() => backupInput.current.click()}><Upload size={16}/>{backupAction === "import" ? "正在导入…" : "导入全部"}</button>
+          <button type="button" className="routine-button" disabled={pending || Boolean(backupAction) || !records.length}
+            onClick={exportAll}><Download size={16}/>{backupAction === "export" ? "正在导出…" : "导出全部"}</button>
+          <input ref={backupInput} type="file" accept=".json,application/json" hidden onChange={importAll}/>
+          <button type="button" className="routine-icon-button" aria-label="刷新套路库" disabled={pending} onClick={reload}><RefreshCw size={17} className={pending ? "routine-spinning" : ""}/></button>
+        </div>
+      </div>
       <div className="routine-library-controls"><div className="routine-segments" role="group" aria-label="筛选套路模式">{[["all", "全部"], ["serve", "我发球"], ["receive", "我接发"]].map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => setMode(value)}>{label}</button>)}</div><label className="routine-search"><Search size={16}/><input aria-label="搜索套路" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索名称、技术、落点或笔记"/></label><select aria-label="按分类筛选" value={category} onChange={event => setCategory(event.target.value)}><option value="*">全部分类</option><option value="">未分类</option>{category && category !== "*" && !categories.includes(category) && <option value={category}>{category}</option>}{categories.map(value => <option key={value} value={value}>{value}</option>)}</select></div>
       {error && <p className="routine-error" role="alert">{error} <button type="button" className="routine-text-button" onClick={reload}>重新读取</button></p>}
+      {backupError && <p className="routine-error" role="alert">{backupError}</p>}
       {feedback && <p role="status" className="routine-feedback">{feedback}</p>}
       {pending && !records.length && <p className="routine-empty" role="status">正在读取套路…</p>}
       {!pending && !groups.length && !error && <div className="routine-empty"><Bookmark size={27}/><h3>{records.length ? "没有符合条件的套路" : "还没有保存的套路"}</h3><p>{records.length ? "试试其他关键词或分类。" : "在球台选完三／四板后，就能保存一套套路。"}</p><button type="button" className="routine-button" onClick={onClose}><ArrowLeft size={16}/>返回球台</button></div>}
@@ -223,7 +286,7 @@ export default function RoutineManager({ open, onClose, onOpen, draftToSave, onS
       })}</div>
     </Modal>
     {overlay?.type === "share" && <ShareRoutineDialog item={overlay.item} close={() => setOverlay(null)}/>}
-    {overlay?.type === "import" && <ImportRoutineDialog close={() => setOverlay(null)} onImported={() => { setOverlay(null); setFeedback("套路已导入。"); setSearch(""); setMode("all"); setCategory("*"); reload() }}/>}
+    {overlay?.type === "import" && <ImportRoutineDialog close={() => setOverlay(null)} onImported={() => imported("套路已导入。")}/>}
     {overlay?.type === "category" && <CategoryDialog item={overlay.item} categories={categories} close={() => setOverlay(null)} onSaved={() => { setOverlay(null); setFeedback("分类已更新。"); reload() }}/>}
     {overlay?.type === "delete" && <DeleteDialog item={overlay.item} close={() => setOverlay(null)} onDeleted={() => { setOverlay(null); setFeedback("套路已删除。"); reload() }}/>}
   </>

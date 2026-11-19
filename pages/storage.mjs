@@ -1,5 +1,5 @@
 import { routineStore } from "./routine-store.mjs"
-import { exportRoutine, importRoutine } from "../lib/table-tennis/sharing.mjs"
+import { exportRoutine, importRoutine, importRoutineLibrary } from "../lib/table-tennis/sharing.mjs"
 
 const changeEvent = "tt-tactics:routines-changed"
 const channelName = "tt-tactics:routines"
@@ -58,6 +58,21 @@ export async function saveRoutine(value, { asNew = false } = {}) {
     if (!response.item) throw new Error("未收到保存结果，请重新读取套路库确认。")
     notify()
     return response.item
+  } catch (error) { throw failure(error) }
+}
+
+export async function restoreRoutineLibrary(raw) {
+  const items = importRoutineLibrary(raw)
+  if (!items.length) return 0
+  try {
+    checkStorage()
+    const now = Date.now()
+    const records = items.map((item, index) => ({
+      ...item, id: createRoutineId(), revision: 1, updatedAt: now - index,
+    }))
+    await routineStore("IMPORT", records)
+    notify()
+    return records.length
   } catch (error) { throw failure(error) }
 }
 
