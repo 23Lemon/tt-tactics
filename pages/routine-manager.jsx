@@ -19,15 +19,6 @@ function downloadJson(json, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-function nativeShareData(json, title, filename) {
-  if (typeof navigator.share !== "function" || typeof navigator.canShare !== "function") return null
-  const file = new File([json], filename, { type: "application/json" })
-  const attachment = { files: [file], title }
-  const text = { text: json, title }
-  if (navigator.canShare(attachment)) return attachment
-  return navigator.canShare(text) ? text : null
-}
-
 function Modal({ title, close, busy = false, wide = false, children }) {
   const element = useRef(null)
   const titleId = useId()
@@ -94,13 +85,9 @@ export function SaveRoutineDialog({ item, categories, close, onSaved }) {
 export function ShareRoutineDialog({ item, close }) {
   const [includeNote, setIncludeNote] = useState(false)
   const [feedback, setFeedback] = useState("")
-  const [busy, setBusy] = useState(false)
-  const [shareUnavailable, setShareUnavailable] = useState(false)
   const output = useRef(null)
   const json = exportRoutine(item, includeNote)
   const filename = (item.title.replace(/[^\p{L}\p{N}._-]+/gu, "-") || "tt-routine") + ".json"
-  const shareData = useMemo(() => shareUnavailable ? null : nativeShareData(json, item.title, filename),
-    [filename, item.title, json, shareUnavailable])
   async function copy() {
     try { if (!navigator.clipboard?.writeText) throw new Error(); await navigator.clipboard.writeText(json); setFeedback("已复制，可发给球友。") }
     catch { output.current?.focus(); output.current?.select(); setFeedback("已选中 JSON，可直接复制。") }
@@ -109,24 +96,15 @@ export function ShareRoutineDialog({ item, close }) {
     downloadJson(json, filename)
     setFeedback("已下载套路文件。")
   }
-  async function share() {
-    setBusy(true); setFeedback("")
-    try {
-      await navigator.share(shareData)
-    } catch (problem) {
-      if (problem.name !== "AbortError") {
-        setShareUnavailable(true)
-        setFeedback("请复制 JSON 或下载文件分享。")
-      }
-    }
-    finally { setBusy(false) }
-  }
-  return <Modal title="分享套路" close={close} busy={busy}><div className="routine-form">
+  return <Modal title="分享套路" close={close}><div className="routine-form">
     <strong className="routine-share-title">{item.title}</strong>
     {item.note && <label className="routine-check"><input type="checkbox" checked={includeNote} onChange={event => setIncludeNote(event.target.checked)}/>附上实战笔记</label>}
     <textarea ref={output} className="routine-json" aria-label="套路 JSON" readOnly value={json} rows={7} spellCheck={false}/>
     <p className="routine-muted">球友可在原网站或此页面的套路库导入这份 JSON。</p>
-    <div className="routine-actions"><button type="button" className="routine-button routine-primary" onClick={copy}><Copy size={16}/>复制 JSON</button><button type="button" className="routine-button" onClick={download}><Download size={16}/>下载文件</button>{shareData && <button type="button" className="routine-button" disabled={busy} onClick={share}><Share2 size={16}/>系统分享</button>}</div>
+    <div className="routine-actions">
+      <button type="button" className="routine-button routine-primary" onClick={copy}><Copy size={16}/>复制 JSON</button>
+      <button type="button" className="routine-button" onClick={download}><Download size={16}/>下载文件</button>
+    </div>
     <p className="routine-feedback" role="status">{feedback}</p>
   </div></Modal>
 }

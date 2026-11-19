@@ -1,6 +1,6 @@
 "use client"
 import { useId, useRef, useState } from "react"
-import { Check, Copy, Download, Share2 } from "lucide-react"
+import { Check, Copy, Download } from "lucide-react"
 import { exportRoutine, importRoutine, importLimit } from "../lib/table-tennis/sharing.mjs"
 import { receiveGroups } from "../lib/table-tennis/repertoire.mjs"
 import { Modal, RouteSummary } from "./routine-controls"
@@ -44,30 +44,22 @@ export function ShareDialog({ item, close }) {
   const output = useRef(null)
   const json = exportRoutine(item, includeNote)
   const name = item.title.replace(/[^\p{L}\p{N}._-]+/gu, "-") + ".json"
-  function file() { return new File([json], name, { type: "application/json" }) }
   async function copy() {
     try { await navigator.clipboard.writeText(json); setFeedback("已复制，可发给球友。") }
     catch { output.current.focus(); output.current.select(); setFeedback("已选中 JSON，可直接复制。") }
   }
   function download() {
-    const url = URL.createObjectURL(file()), link = document.createElement("a")
+    const url = URL.createObjectURL(new Blob([json], { type: "application/json" }))
+    const link = document.createElement("a")
     link.href = url; link.download = name; link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-  }
-  async function share() {
-    try {
-      const files = [file()]
-      if (navigator.canShare?.({ files })) await navigator.share({ files, title: item.title })
-      else await navigator.share({ text: json, title: item.title })
-    } catch (error) { if (error.name !== "AbortError") setFeedback("可以复制 JSON 或下载文件分享。") }
   }
   return <Modal title="分享套路" close={close}><div className="modal-form"><strong>{item.title}</strong>
     {item.note && <label className="toggle-row"><input type="checkbox" checked={includeNote} onChange={e => setNote(e.target.checked)}/>附上实战笔记</label>}
     <textarea aria-label="套路 JSON" readOnly value={json} ref={output} rows={5} spellCheck={false}/>
     <p className="muted">球友可在「套路库 → 导入套路」粘贴或打开文件。</p>
     <div className="tool-actions"><button className="button primary" onClick={copy}><Copy size={16}/>复制 JSON</button>
-      <button className="button outline" onClick={download}><Download size={16}/>下载文件</button>
-      {typeof navigator !== "undefined" && navigator.share && <button className="button outline" onClick={share}><Share2 size={15}/>系统分享</button>}</div>
+      <button className="button outline" onClick={download}><Download size={16}/>下载文件</button></div>
     <span role="status">{feedback}</span></div></Modal>
 }
 
