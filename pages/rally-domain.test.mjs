@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   actorAt, applySteps, buildSteps, canVisit, chooseStroke, createDraft, fromRoutine,
   getAnalysis, getIdeas, getLandingView, getStatus, getSuggestions, goTo, halfToPoint,
-  moveLanding, pointToHalf, receiverAt, setHands, stepCount, toRoutinePayload, updateServe,
+  moveLanding, pointToHalf, receiverAt, setHands, setRubber, stepCount, toRoutinePayload, updateServe,
 } from './rally-domain.mjs'
 import { pointZone, validateSteps } from '../lib/table-tennis/catalog.mjs'
 import { COURT, targetPoint } from '../lib/table-tennis/physics.mjs'
@@ -24,6 +24,25 @@ function finish(draft) {
   }
   return draft
 }
+
+test('更换胶皮后重新推荐受影响的板次，并随套路保存和回读', () => {
+  const inverted = updateServe(createDraft(), { family: 'plain', spin: 'under', zone: 'bh-long', position: -.8 })
+  const draft = setRubber(inverted, 'opponent', 'bh', 'longOx')
+  const option = getSuggestions(draft, 1).find(choice => choice.tech === 'bhPipPush')
+  assert.ok(option)
+  assert.ok(!getSuggestions(inverted, 1).some(choice => choice.tech === option.tech))
+  const selected = chooseStroke(draft, 1, option)
+  assert.ok(getAnalysis(selected)[1].top > 0)
+  const payload = toRoutinePayload(finish(selected), form)
+  assert.deepEqual(payload.steps[0].rubbers, { opponent: { bh: 'longOx' } })
+  const restored = fromRoutine(importRoutine(exportRoutine(payload, true)))
+  assert.deepEqual(buildSteps(restored), payload.steps)
+  assert.ok(getStatus(restored).complete)
+  const changed = setRubber(restored, 'opponent', 'bh', 'inverted')
+  assert.equal(changed.steps.length, 1)
+  assert.equal(changed.active, 1)
+  assert.deepEqual(changed.rubbers, {})
+})
 
 test('原推荐完整串联三板和四板，并按模式固定左右身份', () => {
   for (const mode of ['serve', 'receive']) {

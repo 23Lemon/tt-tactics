@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Bookmark, Check, ChevronDown, ChevronUp, Compass, Crosshair, Info, Library, RotateCcw, Settings2, UserRound, X } from 'lucide-react'
-import { contactSetbackCm, storedServeDistance, SERVE_DISTANCE, SERVE_POSITION_LIMITS, STROKE_GROUPS, handName, servePositionName, serveSpinName, shotName, zoneName } from '../lib/table-tennis/catalog.mjs'
+import { contactSetbackCm, storedServeDistance, SERVE_DISTANCE, SERVE_POSITION_LIMITS, STROKE_GROUPS, handName, playerHand, servePositionName, serveSpinName, shotName, strokeFitsRubber, zoneName } from '../lib/table-tennis/catalog.mjs'
+import { RUBBERS, rubberFor } from '../lib/table-tennis/rubbers.mjs'
 import { COURT, serveOrigin, secondBounceDescription, spinDescription } from '../lib/table-tennis/physics.mjs'
 import { assessStroke, techniqueDescription } from '../lib/table-tennis/tactics.mjs'
 import { receiveGroups } from '../lib/table-tennis/repertoire.mjs'
 import { Modal, RouteSummary } from '../app/routine-controls.jsx'
 import Court from '../app/court.jsx'
 import { usePreferences } from '../app/use-preferences.js'
-import { TRACKS, PACES, SERVES, STRENGTHS, STROKES, actorAt, applySteps, buildSteps, canVisit, chooseStroke, createDraft, fromRoutine, getAnalysis, getIdeas, getLandingView, getStatus, getSuggestions, goTo, moveLanding, receiverAt, setHands, titleAt, updateServe } from './rally-domain.mjs'
+import { TRACKS, PACES, SERVES, STRENGTHS, STROKES, actorAt, applySteps, buildSteps, canVisit, chooseStroke, createDraft, fromRoutine, getAnalysis, getIdeas, getLandingView, getStatus, getSuggestions, goTo, moveLanding, setHands, setRubber, titleAt, updateServe } from './rally-domain.mjs'
 import RoutineManager from './routine-manager.jsx'
 import { listRoutines, subscribeRoutines } from './storage.mjs'
 import './rally.css'
@@ -165,12 +166,14 @@ function DecisionEditor({ draft, results, options, onChoose, onCustom }) {
 
 function CustomTechnique({ draft, results, close, choose }) {
   const [query, setQuery] = useState(''), [all, setAll] = useState(false), [tech, setTech] = useState(draft.steps[draft.active]?.tech || ''), [label, setLabel] = useState(draft.steps[draft.active]?.label || '')
-  const assessments = useMemo(() => Object.fromEntries(Object.keys(STROKES).map(key => [key, assessStroke(results[draft.active - 1], key)])), [results, draft.active])
+  const actor = actorAt(draft, draft.active)
+  const assessments = useMemo(() => Object.fromEntries(Object.keys(STROKES).map(key => [key, assessStroke(results[draft.active - 1], key, draft)])), [results, draft])
   return <Modal title="自选技术" close={close} wide>
     <div className="rally-custom-form"><input type="search" placeholder="搜索技术" aria-label="搜索技术" value={query} onChange={event => setQuery(event.target.value)} />
       <label className="rally-check"><input type="checkbox" checked={all} onChange={event => setAll(event.target.checked)} />显示不适用的技术及原因</label>
       <div className="rally-technique-list">{STROKE_GROUPS.map(group => {
-        const items = group.strokes.filter(id => (all || assessments[id].allowed) && STROKES[id].name.includes(query.trim()))
+        const items = group.strokes.filter(id => strokeFitsRubber(id, actor, draft) &&
+          (all || assessments[id].allowed) && STROKES[id].name.includes(query.trim()))
         return items.length ? <section key={group.name}><h3>{group.name}</h3>{items.map(id => <button key={id} type="button" disabled={!assessments[id].allowed} aria-pressed={tech === id} onClick={() => setTech(id)}><strong>{STROKES[id].name}</strong><small>{assessments[id].reason || techniqueDescription(id)}</small>{tech === id && <Check size={15}/>}</button>)}</section> : null
       })}</div>
       {tech && <><label>自定义叫法（选填）<input value={label} aria-label="自定义叫法" maxLength={28} onChange={event => setLabel(event.target.value)} /></label><button className="rally-button primary" type="button" disabled={!assessments[tech]?.allowed} onClick={() => choose({ tech, ...(label.trim() ? { label: label.trim() } : {}) })}>选用这板</button></>}
@@ -178,16 +181,28 @@ function CustomTechnique({ draft, results, close, choose }) {
   </Modal>
 }
 
-function PlayerSettings({ draft, preferences, onHands, close }) {
+const rubberName = id => RUBBERS[id].shortName ?? RUBBERS[id].name
+
+function PlayerSettings({ draft, preferences, onHands, onRubber, close }) {
   const [groups, setGroups] = useState(null)
   const selectedGroups = groups ?? preferences.snapshot?.groups ?? EMPTY_GROUPS
   return <Modal title="双方设置" close={close}>
     <div className="rally-settings-form">
-      <label>我方持拍手<Segments label="我方持拍手" values={{ right: '右手', left: '左手' }} value={draft.myHand} onChange={myHand => onHands({ myHand })}/></label>
-      <label>对手持拍手<Segments label="对手持拍手" values={{ right: '右手', left: '左手' }} value={draft.hand} onChange={hand => onHands({ hand })}/></label>
+      {['me', 'opponent'].map(actor => <fieldset className="rally-player-settings" key={actor}>
+        <legend>{roleName(actor)}</legend>
+        <Segments label={roleName(actor) + '持拍手'} values={{ right: '右手', left: '左手' }} value={playerHand(actor, draft)}
+          onChange={value => onHands(actor === 'me' ? { myHand: value } : { hand: value })}/>
+        <div className="rally-rubber-fields">{[['fh', '正手'], ['bh', '反手']].map(([face, label]) => {
+          const rubber = rubberFor(draft, actor, face)
+          return <label key={face}>{label}胶皮<span className="rally-rubber-select"><select aria-label={roleName(actor) + label + '胶皮'} value={rubber}
+            onChange={event => onRubber(actor, face, event.target.value)}>
+            {Object.entries(RUBBERS).map(([id, info]) => <option key={id} value={id}>{info.name}</option>)}
+          </select><ChevronDown size={14} aria-hidden="true"/></span>{RUBBERS[rubber].description && <small>{RUBBERS[rubber].description}</small>}</label>
+        })}</div>
+      </fieldset>)}
       <details><summary>对手常用接法</summary><div className="rally-preferences">{receiveGroups.map(([key, title]) => <label key={key}><input type="checkbox" checked={selectedGroups.includes(key)} disabled={!preferences.snapshot || preferences.busy} onChange={() => setGroups(old => { const current = old ?? preferences.snapshot?.groups ?? EMPTY_GROUPS; return current.includes(key) ? current.filter(x => x !== key) : [...current, key] })}/>{title}</label>)}</div><p className="rally-muted">留空显示全部；用于预判对手如何接你的发球。</p></details>
       {preferences.error && <p className="rally-error" role="alert">{preferences.error}</p>}
-      <button className="rally-button primary" type="button" disabled={preferences.busy || !preferences.snapshot} onClick={async () => { if (await preferences.save(preferences.snapshot, selectedGroups)) close() }}>{preferences.busy ? '保存中…' : '完成'}</button>
+      <button className="rally-button primary" type="button" disabled={preferences.busy} onClick={async () => { if (groups === null || await preferences.save(preferences.snapshot, selectedGroups)) close() }}>{preferences.busy ? '保存中…' : '完成'}</button>
     </div>
   </Modal>
 }
@@ -214,10 +229,16 @@ export default function RallyWorkbench() {
   function choose(option) { try { const nextDraft = chooseStroke(draft, draft.active, option); setDrafts(old => ({ ...old, [mode]: nextDraft })); setAdjustment('read'); setMessage(''); setDialog(null) } catch (error) { setMessage(error.message) } }
   function changeMode(value) { setMode(value); setDialog(null); setServePart(null); setAdjustment('read') }
   function changeHands(patch) { setDrafts(old => Object.fromEntries(Object.entries(old).map(([key, value]) => [key, setHands(value, key === mode ? patch : Object.hasOwn(patch, 'myHand') ? { myHand: patch.myHand } : {})]))); setServePart(null) }
+  function changeRubber(actor, face, id) {
+    setDrafts(old => Object.fromEntries(Object.entries(old).map(([key, value]) =>
+      [key, key === mode || actor === 'me' ? setRubber(value, actor, face, id) : value])))
+    setServePart(null)
+    setAdjustment('read')
+  }
   function openRoutine(item) {
     try { let value = fromRoutine(item); const check = getStatus(value); if (check.invalidIndex >= 0) value = { ...value, active: check.invalidIndex }; setDrafts(old => ({ ...old, [item.mode]: value })); setMode(item.mode); setManager(null); setServePart(null) } catch (error) { setMessage(error.message) }
   }
-  function newRoutine() { if (draft.steps.length && !window.confirm('开始一条新套路？当前未保存的修改会清空。')) return; update(() => createDraft(mode, draft.myHand, draft.hand)); setServePart('family') }
+  function newRoutine() { if (draft.steps.length && !window.confirm('开始一条新套路？当前未保存的修改会清空。')) return; update(() => createDraft(mode, draft.myHand, draft.hand, draft.rubbers)); setServePart('family') }
   function next() { if (!status.ready) return; if (draft.active === TRACKS[mode].length - 1) { if (status.complete) setManager('save') } else update(value => goTo(value, value.active + 1)) }
   function showIdeas() { setIdeas(getIdeas(draft, records, pickedGroups)); setDialog('ideas') }
   useLayoutEffect(() => {
@@ -272,7 +293,7 @@ export default function RallyWorkbench() {
     <main className="rally-main">
       <div className="rally-toolbar"><Segments label="分析模式" values={{ serve: '我发球', receive: '我接发' }} value={mode} onChange={changeMode}/><div className="rally-top-actions"><button type="button" aria-label="开始新套路" onClick={newRoutine}><RotateCcw size={16}/></button><button type="button" aria-label="双方设置" onClick={() => setDialog('players')}><Settings2 size={17}/></button></div></div>
       <div className="rally-context-actions"><button type="button" onClick={showIdeas}><Compass size={14}/>找新套路</button><button type="button" disabled={!draft.steps.length} onClick={() => { setAdjustment('read'); setDialog('court') }}>球路详情<ArrowRight size={13}/></button></div>
-      <section className="rally-sides" aria-label="双方持拍手"><button type="button" onClick={() => setDialog('players')}><span><UserRound size={18}/><strong>我方</strong></span><small>{handName(draft.myHand)}</small></button><span className="rally-net-label">球网</span><button type="button" onClick={() => setDialog('players')}><span><UserRound size={18}/><strong>对手</strong></span><small>{handName(draft.hand)}</small></button></section>
+      <section className="rally-sides" aria-label="双方持拍手与胶皮">{['me', 'opponent'].map(actor => <button key={actor} type="button" onClick={() => setDialog('players')}><span><UserRound size={18}/><strong>{roleName(actor)}</strong></span><small>{handName(playerHand(actor, draft))} · {rubberName(rubberFor(draft, actor, 'fh'))}／{rubberName(rubberFor(draft, actor, 'bh'))}</small></button>)}<span className="rally-net-label">球网</span></section>
       <div className="rally-exchanges" ref={rally} aria-label="球网两侧的逐板选择">
         {TRACKS[mode].map((_, index) => <div className={`rally-turn${index === draft.active ? ' current' : ''}${stancePreview && !index && !draft.active ? ' show-stance' : ''}`} key={`${mode}-${index}`}>
           {actorAt(draft, index) === 'me' ? actionCard(index) : destination(index)}
@@ -284,9 +305,9 @@ export default function RallyWorkbench() {
       <footer className="rally-page-footer"><span>{draft.saved ? '正在编辑已存套路' : `${mode === 'serve' ? '三' : '四'}板衔接`}</span><button type="button" onClick={() => setDialog('about')}><Info size={13}/>关于推荐</button></footer>
     </main>
     {message && <div className="rally-toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="关闭提示"><X size={16}/></button></div>}
-    <RoutineManager open={manager} onClose={() => setManager(null)} draftToSave={saveDraft} onOpen={openRoutine} onSaved={item => { setManager(null); setDrafts(old => ({ ...old, [item.mode]: createDraft(item.mode, item.myHand, item.hand) })); setServePart('family'); setMessage('已保存到套路库'); refreshRecords() }}/>
+    <RoutineManager open={manager} onClose={() => setManager(null)} draftToSave={saveDraft} onOpen={openRoutine} onSaved={item => { setManager(null); setDrafts(old => ({ ...old, [item.mode]: createDraft(item.mode, item.myHand, item.hand, item.steps[0].rubbers) })); setServePart('family'); setMessage('已保存到套路库'); refreshRecords() }}/>
     {dialog === 'custom' && <CustomTechnique draft={draft} results={results} close={() => setDialog(null)} choose={choose}/>}
-    {dialog === 'players' && <PlayerSettings draft={draft} preferences={preferences} onHands={changeHands} close={() => setDialog(null)}/>}
+    {dialog === 'players' && <PlayerSettings draft={draft} preferences={preferences} onHands={changeHands} onRubber={changeRubber} close={() => setDialog(null)}/>}
     {dialog === 'ideas' && <Modal title="找新套路" close={() => setDialog(null)} wide><div className="rally-ideas">{[['openers', '试试这些开局'], ['branches', '同一发球换种接法']].map(([key, title]) => <section key={key}><h3>{title}</h3>{ideas?.[key]?.length ? ideas[key].map((idea, i) => <article key={i}><RouteSummary mode={mode} hands={draft} steps={idea.steps}/><p>{idea.reason}</p><button type="button" className="rally-button" onClick={() => { update(value => applySteps(value, idea.steps)); setServePart(null); setDialog(null) }}>查看线路<ArrowRight size={14}/></button></article>) : <p className="rally-muted">当前条件暂无新组合。</p>}</section>)}</div></Modal>}
     {dialog === 'court' && <Modal title="球路详情" close={() => setDialog(null)} wide><div className="rally-full-court"><Court mode={mode} hands={draft} active={draft.active} setup={draft.setup} steps={draft.steps} focus={focus} readResults={results} visibleResults={projected} adjustment={adjustment} setAdjustment={setAdjustment} setZone={() => {}} editable={false} expanded setExpanded={() => {}}/></div></Modal>}
     {dialog === 'about' && <Modal title="关于推荐" close={() => setDialog(null)}><div className="rally-about"><p>按来球旋转、落点、球速和击球条件，比较可行接法与后续衔接。</p><p>推荐与球路由原站的技术规则和物理近似计算。具体排序是教学参考，需结合到位情况、器材和熟练度判断。</p><p>套路保存在当前浏览器，可用 JSON 与原版互相分享、导入。</p><a href="https://github.com/23Lemon/tt-tactics/blob/main/docs/model-and-design.md" target="_blank" rel="noreferrer">查看模型说明<ArrowRight size={14}/></a></div></Modal>}

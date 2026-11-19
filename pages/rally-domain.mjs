@@ -1,7 +1,8 @@
 import {
   DEFAULT_POSITION, PACES, SERVES, SERVE_DISTANCE, STRENGTHS, STROKES,
-  forehand, other, playerHand, pointZone, shotActor, snapPoint, validateSteps, zoneInfo,
+  forehand, other, playerHand, pointZone, shotActor, snapPoint, strokeFace, validateSteps, zoneInfo,
 } from '../lib/table-tennis/catalog.mjs'
+import { normalizeRubbers, rubberFor, serveFace } from '../lib/table-tennis/rubbers.mjs'
 import { COURT, analyze, targetPoint } from '../lib/table-tennis/physics.mjs'
 import { assessStroke, findIdeas, optionsFor } from '../lib/table-tennis/tactics.mjs'
 
@@ -21,11 +22,11 @@ export function stepCount(mode) {
   return mode === 'receive' ? 4 : 3
 }
 
-export function createDraft(mode = 'serve', myHand = 'right', hand = 'right') {
+export function createDraft(mode = 'serve', myHand = 'right', hand = 'right', rubbers) {
   if (!TRACKS[mode]) throw new TypeError('无法识别分析模式。')
   if (!handsAreValid(myHand) || !handsAreValid(hand)) throw new TypeError('持拍手设置无效。')
   return {
-    mode, myHand, hand, active: 0, saved: null,
+    mode, myHand, hand, rubbers: normalizeRubbers(rubbers) ?? {}, active: 0, saved: null,
     setup: {
       family: '', spin: '', zone: '', strength: 'medium', pace: 'normal',
       position: DEFAULT_POSITION, distance: SERVE_DISTANCE.default,
@@ -86,6 +87,16 @@ export function setHands(draft, changes) {
   return { ...draft, ...patch, active: 0, steps: draft.steps.slice(0, 1) }
 }
 
+export function setRubber(draft, actor, face, id) {
+  if (rubberFor(draft, actor, face) === id) return draft
+  const rubbers = normalizeRubbers({ ...draft.rubbers, [actor]: { ...draft.rubbers[actor], [face]: id } })
+  if (!rubbers) throw new TypeError('请选择有效的胶皮。')
+  const firstChanged = draft.steps.findIndex((step, index) =>
+    actorAt(draft, index) === actor && (index === 0 ? serveFace(step) : strokeFace(step.tech)) === face)
+  return firstChanged < 0 ? { ...draft, rubbers } :
+    { ...draft, rubbers, active: Math.min(draft.active, firstChanged), steps: draft.steps.slice(0, Math.max(1, firstChanged)) }
+}
+
 export function getAnalysis(draft, adjustment = 'read') {
   let cache = analyses.get(draft)
   if (!cache) {
@@ -105,7 +116,7 @@ export function getSuggestions(draft, index = draft.active, preferences = [], re
 }
 
 export function assessChoice(draft, index, tech, results = getAnalysis(draft)) {
-  return assessStroke(results[index - 1], tech)
+  return assessStroke(results[index - 1], tech, draft)
 }
 
 export function chooseStroke(draft, index, techOrOption, zone) {
@@ -116,7 +127,8 @@ export function chooseStroke(draft, index, techOrOption, zone) {
   const assessment = assessChoice(draft, index, value.tech)
   if (!assessment.allowed) throw new TypeError(assessment.reason)
   const suggested = getSuggestions(draft, index).find(option => option.tech === value.tech)
-  const target = zone ?? value.zone ?? suggested?.zone ?? (STROKES[value.tech].kind === 'short' ? 'mid-short' : 'mid-long')
+  const shortControl = ['short', 'softBlock', 'wipe', 'antiBump'].includes(STROKES[value.tech].kind)
+  const target = zone ?? value.zone ?? suggested?.zone ?? (shortControl ? 'mid-short' : 'mid-long')
   if (!zoneInfo(target)) throw new TypeError('请选择有效落点。')
   const shot = { tech: value.tech, zone: target }
   if (value.label?.trim()) shot.label = value.label.trim().slice(0, 28)
@@ -174,7 +186,7 @@ export function getLandingView(draft, index) {
 export function canVisit(draft, index, results = getAnalysis(draft)) {
   if (!Number.isInteger(index) || index < 0 || index >= stepCount(draft.mode)) return false
   for (let i = 0; i < index; i++) {
-    if (!draft.steps[i] || !results[i]?.valid || (i > 0 && !assessStroke(results[i - 1], draft.steps[i].tech).allowed)) return false
+    if (!draft.steps[i] || !results[i]?.valid || (i > 0 && !assessChoice(draft, i, draft.steps[i].tech, results).allowed)) return false
   }
   return true
 }
@@ -185,11 +197,11 @@ export function goTo(draft, index) {
 
 export function getStatus(draft, results = getAnalysis(draft)) {
   const assessment = draft.active > 0 && draft.steps[draft.active]
-    ? assessStroke(results[draft.active - 1], draft.steps[draft.active].tech) : null
+    ? assessChoice(draft, draft.active, draft.steps[draft.active].tech, results) : null
   let invalidIndex = -1
   let error = ''
   for (let i = 0; i < draft.steps.length; i++) {
-    const checked = i > 0 ? assessStroke(results[i - 1], draft.steps[i].tech) : null
+    const checked = i > 0 ? assessChoice(draft, i, draft.steps[i].tech, results) : null
     if (!results[i]?.valid || checked && !checked.allowed) {
       invalidIndex = i
       error = checked && !checked.allowed ? checked.reason : results[i]?.issue || '当前线路预计下网或出界，请调整落点或接法。'
@@ -203,7 +215,11 @@ export function getStatus(draft, results = getAnalysis(draft)) {
 }
 
 export function buildSteps(draft) {
-  return draft.steps.map(step => ({ ...step, ...(step.point ? { point: clonePoint(step.point) } : {}) }))
+  return draft.steps.map((step, index) => {
+    const { rubbers: _rubbers, ...fields } = step
+    return { ...fields, ...(step.point ? { point: clonePoint(step.point) } : {}),
+      ...(index === 0 && Object.keys(draft.rubbers).length ? { rubbers: normalizeRubbers(draft.rubbers) } : {}) }
+  })
 }
 
 export function toRoutinePayload(draft, form) {
@@ -224,7 +240,7 @@ export function fromRoutine(item) {
   const steps = validateSteps(item.mode, item.steps)
   if (!steps) throw new TypeError('这条套路的线路不完整或格式无效。')
   return {
-    ...createDraft(item.mode, item.myHand ?? 'right', item.hand),
+    ...createDraft(item.mode, item.myHand ?? 'right', item.hand, steps[0].rubbers),
     setup: steps[0], steps, active: steps.length - 1, saved: item,
   }
 }
@@ -232,7 +248,7 @@ export function fromRoutine(item) {
 export function applySteps(draft, rawSteps) {
   const steps = validateSteps(draft.mode, rawSteps)
   if (!steps) throw new TypeError('无法应用这条线路。')
-  return { ...draft, setup: steps[0], steps, active: 0, saved: null }
+  return { ...draft, rubbers: steps[0].rubbers ?? draft.rubbers, setup: steps[0], steps, active: 0, saved: null }
 }
 
 export function getIdeas(draft, records = [], preferences = []) {
