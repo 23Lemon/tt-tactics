@@ -94,7 +94,12 @@ export function setRubber(draft, actor, face, id) {
   const firstChanged = draft.steps.findIndex((step, index) =>
     actorAt(draft, index) === actor && (index === 0 ? serveFace(step) : strokeFace(step.tech)) === face)
   return firstChanged < 0 ? { ...draft, rubbers } :
-    { ...draft, rubbers, active: Math.min(draft.active, firstChanged), steps: draft.steps.slice(0, Math.max(1, firstChanged)) }
+    { ...draft, rubbers, active: Math.min(focusedStep(draft), firstChanged), steps: draft.steps.slice(0, Math.max(1, firstChanged)) }
+}
+
+export function focusedStep(draft) {
+  const last = draft.steps.length - 1
+  return draft.active < 0 ? last : Math.min(draft.active, last)
 }
 
 export function getAnalysis(draft, adjustment = 'read') {
@@ -104,8 +109,7 @@ export function getAnalysis(draft, adjustment = 'read') {
     analyses.set(draft, cache)
   }
   if (!cache.has(adjustment)) {
-    const focus = Math.max(0, Math.min(draft.active, draft.steps.length - 1))
-    cache.set(adjustment, analyze(draft.mode, draft, draft.steps, adjustment, focus))
+    cache.set(adjustment, analyze(draft.mode, draft, draft.steps, adjustment, focusedStep(draft)))
   }
   return cache.get(adjustment)
 }
@@ -241,7 +245,7 @@ export function fromRoutine(item) {
   if (!steps) throw new TypeError('这条套路的线路不完整或格式无效。')
   return {
     ...createDraft(item.mode, item.myHand ?? 'right', item.hand, steps[0].rubbers),
-    setup: steps[0], steps, active: steps.length - 1, saved: item,
+    setup: steps[0], steps, active: -1, saved: item,
   }
 }
 

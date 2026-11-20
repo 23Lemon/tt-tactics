@@ -60,3 +60,12 @@
 .show-stance :is(.half-depths,.half-lanes,.half-zone-name,.half-empty-marker,.rally-arrow){opacity:0}
 .rally-serve-turn :is(.rally-field,.rally-serve-settings summary,.rally-advanced-fields label:has(select)){transition:opacity 220ms ease,filter 220ms ease}
 .show-stance :is(.rally-field,.rally-serve-settings summary,.rally-advanced-fields label:has(select)){opacity:.14;filter:blur(2px)}
+.rally-serve-settings{border:0;margin-top:10px}
+.rally-serve-settings summary{display:flex;align-items:center;gap:6px;min-height:46px;padding:6px 7px;border:1px solid var(--rally-hard);border-radius:5px;background:var(--rally-selected);color:var(--rally-accent);list-style:none;cursor:pointer}
+.rally-serve-settings summary::-webkit-details-marker{display:none}
+.rally-serve-settings summary>svg{flex:none}
+.rally-serve-settings summary>span{flex:1;min-width:0}
+.rally-serve-settings summary :is(strong,small){display:block;line-height:1.4}
+.rally-serve-settings summary strong{font-size:13px}
+.rally-serve-settings summary small{margin-top:2px;font-size:11px;color:var(--rally-muted)}
+.rally-serve-settings[open] .rally-serve-settings-chevron{transform:rotate(180deg)}

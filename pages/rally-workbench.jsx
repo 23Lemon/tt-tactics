@@ -8,7 +8,7 @@ import { availableReceiveGroups, checkedReceiveGroups, noReceiveGroups } from '.
 import { Modal, RouteSummary } from '../app/routine-controls.jsx'
 import Court from '../app/court.jsx'
 import { usePreferences } from '../app/use-preferences.js'
-import { TRACKS, PACES, SERVES, STRENGTHS, STROKES, actorAt, applySteps, buildSteps, canVisit, chooseStroke, createDraft, fromRoutine, getAnalysis, getIdeas, getLandingView, getStatus, getSuggestions, goTo, moveLanding, setHands, setRubber, titleAt, updateServe } from './rally-domain.mjs'
+import { TRACKS, PACES, SERVES, STRENGTHS, STROKES, actorAt, applySteps, buildSteps, canVisit, chooseStroke, createDraft, focusedStep, fromRoutine, getAnalysis, getIdeas, getLandingView, getStatus, getSuggestions, goTo, moveLanding, setHands, setRubber, titleAt, updateServe } from './rally-domain.mjs'
 import RoutineManager from './routine-manager.jsx'
 import { listRoutines, subscribeRoutines } from './storage.mjs'
 import './rally.css'
@@ -158,7 +158,11 @@ function ServeEditor({ draft, onChange, part, setPart, setPreview }) {
   return <>
     {group('family', '发球手法', Object.entries(SERVES).map(([key, value]) => [key, value.name]))}
     {setup.family && group('spin', '旋转', SERVES[setup.family].spins.map(spin => [spin, serveSpinName({ ...setup, spin }, actorAt(draft, 0), draft)]))}
-    {setup.family && <details className="rally-disclosure rally-serve-settings"><summary>更多设置</summary><div className="rally-advanced-fields">
+    {setup.family && <details className="rally-disclosure rally-serve-settings"><summary>
+      <Settings2 size={16} aria-hidden="true"/>
+      <span><strong>发球设置</strong><small>横向站位 · 触球点距离 · 球速</small></span>
+      <ChevronDown size={15} className="rally-serve-settings-chevron" aria-hidden="true"/>
+    </summary><div className="rally-advanced-fields">
       <label>球速<select aria-label="发球球速" value={setup.pace} onChange={event => onChange({ pace: event.target.value })}>{Object.entries(PACES).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
       {setup.spin !== 'dead' && <label>旋转强度<select aria-label="旋转强度" value={setup.strength} onChange={event => onChange({ strength: event.target.value })}>{Object.entries(STRENGTHS).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>}
       <label>横向站位 · {servePositionName(setup.position)}<input {...previewEvents} type="range" aria-label="发球横向站位" min={SERVE_POSITION_LIMITS.min} max={SERVE_POSITION_LIMITS.max} step=".01" value={Math.min(setup.position, SERVE_POSITION_LIMITS.max)} onChange={event => onChange({ position: Number(event.target.value) })} /></label>
@@ -273,7 +277,16 @@ export default function RallyWorkbench() {
     setAdjustment('read')
   }
   function openRoutine(item) {
-    try { let value = fromRoutine(item); const check = getStatus(value); if (check.invalidIndex >= 0) value = { ...value, active: check.invalidIndex }; setDrafts(old => ({ ...old, [item.mode]: value })); setMode(item.mode); setManager(null); setServePart(null) } catch (error) { setMessage(error.message) }
+    try {
+      const value = fromRoutine(item)
+      setDrafts(old => ({ ...old, [item.mode]: value }))
+      setMode(item.mode)
+      setManager(null)
+      setServePart(null)
+      setStancePreview(null)
+      setAdjustment('read')
+      setMessage('')
+    } catch (error) { setMessage(error.message) }
   }
   function newRoutine() { if (draft.steps.length && !window.confirm('开始一条新套路？当前未保存的修改会清空。')) return; update(() => createDraft(mode, draft.myHand, draft.hand, draft.rubbers)); setServePart('family') }
   function next() { if (!status.ready) return; if (draft.active === TRACKS[mode].length - 1) { if (status.complete) setManager('save') } else update(value => goTo(value, value.active + 1)) }
@@ -306,12 +319,12 @@ export default function RallyWorkbench() {
   }, [draft, options, status.error])
 
   const saveDraft = { mode, myHand: draft.myHand, hand: draft.hand, steps: buildSteps(draft), ...(draft.saved ? { id: draft.saved.id, revision: draft.saved.revision, title: draft.saved.title, note: draft.saved.note, category: draft.saved.category, status: draft.saved.status } : {}) }
-  const focus = Math.max(0, Math.min(draft.active, draft.steps.length - 1))
+  const focus = focusedStep(draft)
   const projected = dialog === 'court' && adjustment === 'fixed' ? getAnalysis(draft, 'fixed').slice(0, focus + 1) : results.slice(0, focus + 1)
   function actionCard(index) {
     const current = index === draft.active, shot = draft.steps[index], allowed = canVisit(draft, index, results)
     const heading = <span className="rally-card-title"><b className="rally-number">{index + 1}</b><strong>{titleAt(draft, index)}</strong></span>
-    if (!current) return <button type="button" className={`rally-card closed${allowed ? '' : ' future'}`} disabled={!allowed} onClick={() => { update(value => goTo(value, index)); setServePart(null) }} aria-label={`第${index + 1}板，${titleAt(draft, index)}`}>{heading}<span className="rally-summary">{shot ? shotName(shot, actorAt(draft, index), draft) : '待选择'}</span></button>
+    if (!current) return <button type="button" className={`rally-card closed${allowed ? '' : ' future'}`} disabled={!allowed} onClick={() => { update(value => goTo(value, index)); setServePart(null) }} aria-expanded="false" aria-label={`第${index + 1}板，${titleAt(draft, index)}`}>{heading}<span className="rally-summary">{shot ? shotName(shot, actorAt(draft, index), draft) : '待选择'}</span></button>
     return <section className="rally-card open" aria-current="step" aria-label={`第${index + 1}板，${titleAt(draft, index)}，在${actorAt(draft, index) === 'me' ? '左' : '右'}侧选择`}>
       <header className="rally-card-heading">{heading}<span>轮到{roleName(actorAt(draft, index))}</span></header>
       <div className="rally-card-fields">{index === 0 ? <ServeEditor draft={draft} onChange={patch => update(value => updateServe(value, patch))} part={servePart} setPart={setServePart} setPreview={setStancePreview} /> : <DecisionEditor key={`${mode}-${index}`} draft={draft} results={results} options={options} onChoose={choose} onCustom={() => setDialog('custom')} />}
@@ -335,7 +348,10 @@ export default function RallyWorkbench() {
           {actorAt(draft, index) === 'opponent' ? actionCard(index) : destination(index)}
         </div>)}
       </div>
-      <footer className="rally-page-footer"><span>{draft.saved ? '正在编辑已存套路' : `${mode === 'serve' ? '三' : '四'}板衔接`}</span><button type="button" onClick={() => setDialog('about')}><Info size={13}/>关于推荐</button></footer>
+      {draft.active < 0 && status.error && <div className="rally-inline-error" role="alert">
+        <p>{status.error}</p><button type="button" onClick={() => update(value => goTo(value, status.invalidIndex))}>检查第 {status.invalidIndex + 1} 板</button>
+      </div>}
+      <footer className="rally-page-footer"><span>{draft.saved ? (draft.active < 0 ? draft.saved.title : '正在编辑已存套路') : `${mode === 'serve' ? '三' : '四'}板衔接`}</span><button type="button" onClick={() => setDialog('about')}><Info size={13}/>关于推荐</button></footer>
     </main>
     {message && <div className="rally-toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="关闭提示"><X size={16}/></button></div>}
     <RoutineManager open={manager} onClose={() => setManager(null)} draftToSave={saveDraft} onOpen={openRoutine} onSaved={item => { setManager(null); setDrafts(old => ({ ...old, [item.mode]: createDraft(item.mode, item.myHand, item.hand, item.steps[0].rubbers) })); setServePart('family'); setMessage('已保存到套路笔记本'); refreshRecords() }}/>

@@ -137,23 +137,30 @@ test('修改早期落点、发球参数或持拍手会截断后续板，原草�
   assert.equal(canVisit(createDraft(), 1), false)
 })
 
-test('连续点选后的真实四板方案可用原 JSON 格式往返，保留坐标和元数据', () => {
-  let draft = opening('receive')
-  const start = getLandingView(draft, 0)
-  draft = moveLanding(draft, 0, start.u + .001, start.v + .001)
-  draft = finish(draft)
-  const payload = toRoutinePayload(draft, { ...form, title: ` ${form.title} ` })
-  assert.equal(payload.title, form.title)
-  assert.ok(payload.steps[0].point)
-  const parsed = importRoutine(exportRoutine(payload, true))
-  assert.deepEqual(parsed, payload)
-  const record = { ...parsed, id: 'fixture-routine', revision: 2, updatedAt: 1 }
-  const reopened = fromRoutine(record)
-  assert.equal(reopened.saved, record)
-  assert.equal(reopened.active, 3)
-  assert.equal(getStatus(reopened).complete, true)
-  assert.deepEqual(buildSteps(reopened), payload.steps)
-  assert.equal(applySteps(createDraft('receive'), payload.steps).active, 0)
+test('连续点选后的套路可用原 JSON 格式往返，打开时各板折叠', () => {
+  for (const mode of ['serve', 'receive']) {
+    let draft = opening(mode)
+    const start = getLandingView(draft, 0)
+    draft = moveLanding(draft, 0, start.u + .001, start.v + .001)
+    draft = finish(draft)
+    const payload = toRoutinePayload(draft, { ...form, title: ` ${form.title} ` })
+    assert.equal(payload.title, form.title)
+    assert.ok(payload.steps[0].point)
+    const parsed = importRoutine(exportRoutine(payload, true))
+    assert.deepEqual(parsed, payload)
+    const record = { ...parsed, id: 'fixture-routine', revision: 2, updatedAt: 1 }
+    const reopened = fromRoutine(record)
+    assert.equal(reopened.saved, record)
+    assert.equal(reopened.active, -1)
+    assert.equal(getStatus(reopened).complete, true)
+    assert.equal(getAnalysis(reopened).length, stepCount(mode))
+    for (let index = 0; index < stepCount(mode); index++) {
+      const edited = goTo(reopened, index)
+      assert.equal(edited.active, index)
+      assert.deepEqual(buildSteps(edited), payload.steps)
+    }
+    assert.equal(applySteps(createDraft(mode), payload.steps).active, 0)
+  }
 })
 
 test('结构合法但接法不适用的导入套路不能继续或保存，并指明首个问题板', () => {
@@ -161,10 +168,12 @@ test('结构合法但接法不适用的导入套路不能继续或保存，并�
   payload.steps[1].tech = 'fhBlock'
   assert.ok(validateSteps('serve', payload.steps))
   const invalid = fromRoutine(payload)
+  assert.equal(invalid.active, -1)
   const status = getStatus(invalid)
   assert.equal(status.complete, false)
   assert.equal(status.ready, false)
   assert.equal(status.invalidIndex, 1)
+  assert.equal(goTo(invalid, status.invalidIndex).active, 1)
   assert.ok(status.error)
   assert.throws(() => toRoutinePayload(invalid, form), /有效/)
   assert.throws(() => chooseStroke(opening(), 1, 'fhBlock'), /台内|下旋/)
