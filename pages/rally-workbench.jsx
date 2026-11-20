@@ -131,14 +131,25 @@ function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
 function ServeEditor({ draft, onChange, part, setPart, setPreview }) {
   const setup = draft.setup
   const expanded = part || (!setup.family ? 'family' : !setup.spin ? 'spin' : null)
+  function endPreview(event) {
+    const input = event.currentTarget
+    // Clicking another slider can focus it after its pointerdown already opened the preview.
+    setPreview(activeInput => activeInput === input ? null : activeInput)
+  }
   const previewEvents = {
-    onPointerDown: event => { event.currentTarget.setPointerCapture(event.pointerId); setPreview(true) },
-    onPointerCancel: () => setPreview(false),
-    onPointerUp: () => setPreview(false),
-    onLostPointerCapture: () => setPreview(false),
-    onKeyDown: event => { if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.key)) setPreview(true) },
-    onKeyUp: () => setPreview(false),
-    onBlur: () => setPreview(false),
+    onPointerDown: event => {
+      const input = event.currentTarget
+      input.setPointerCapture(event.pointerId)
+      setPreview(input)
+    },
+    onPointerCancel: endPreview,
+    onPointerUp: endPreview,
+    onLostPointerCapture: endPreview,
+    onKeyDown: event => {
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) setPreview(event.currentTarget)
+    },
+    onKeyUp: endPreview,
+    onBlur: endPreview,
   }
   const group = (key, title, options) => <div className="rally-field" key={key}>
     <button className="rally-field-toggle" type="button" aria-expanded={expanded === key} onClick={() => setPart(expanded === key ? null : key)}><span>{title}</span><strong>{key === 'family' ? SERVES[setup.family]?.name || '请选择' : setup.spin ? serveSpinName(setup, actorAt(draft, 0), draft) : '请选择'}</strong>{expanded === key ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button>
@@ -236,7 +247,7 @@ function PlayerSettings({ draft, preferences, onHands, onRubber, close }) {
 export default function RallyWorkbench() {
   const [mode, setMode] = useState('serve')
   const [drafts, setDrafts] = useState(() => ({ serve: createDraft('serve'), receive: createDraft('receive') }))
-  const [stancePreview, setStancePreview] = useState(false)
+  const [stancePreview, setStancePreview] = useState(null)
   const [servePart, setServePart] = useState('family')
   const [dialog, setDialog] = useState(null), [manager, setManager] = useState(null), [message, setMessage] = useState(''), [records, setRecords] = useState([]), [adjustment, setAdjustment] = useState('read')
   const rally = useRef(null)
@@ -253,7 +264,7 @@ export default function RallyWorkbench() {
   function update(transform) { setDrafts(old => ({ ...old, [mode]: transform(old[mode]) })); setAdjustment('read'); setMessage('') }
   function point(index, u, v) { update(value => moveLanding(value, index, u, v)) }
   function choose(option) { try { const nextDraft = chooseStroke(draft, draft.active, option); setDrafts(old => ({ ...old, [mode]: nextDraft })); setAdjustment('read'); setMessage(''); setDialog(null) } catch (error) { setMessage(error.message) } }
-  function changeMode(value) { setMode(value); setDialog(null); setServePart(null); setAdjustment('read'); setStancePreview(false) }
+  function changeMode(value) { setMode(value); setDialog(null); setServePart(null); setAdjustment('read'); setStancePreview(null) }
   function changeHands(patch) { setDrafts(old => Object.fromEntries(Object.entries(old).map(([key, value]) => [key, setHands(value, key === mode ? patch : Object.hasOwn(patch, 'myHand') ? { myHand: patch.myHand } : {})]))); setServePart(null) }
   function changeRubber(actor, face, id) {
     setDrafts(old => Object.fromEntries(Object.entries(old).map(([key, value]) =>
