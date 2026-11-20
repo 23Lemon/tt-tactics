@@ -88,6 +88,13 @@ function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
   const me = view.receiver === 'me'
   const current = index === draft.active
   const ready = current && (index === 0 ? Boolean(draft.setup.family && draft.setup.spin) : Boolean(draft.steps[index]))
+  const selectedZone = zoneName(view.zone)
+  let landingLabel = selectedZone || '待选落点'
+  if (current && index === 0) {
+    if (!draft.setup.family) landingLabel = '请选择发球手法'
+    else if (!draft.setup.spin) landingLabel = '请选择旋转'
+    else if (!selectedZone) landingLabel = '请点选落点'
+  }
   const row = view.zone ? view.lanes.indexOf(view.zone.split('-')[0]) : -1
   const column = view.zone ? view.depths.indexOf(view.zone.split('-')[1]) : -1
   function pick(event) {
@@ -110,13 +117,13 @@ function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
     {view.u !== null && <circle cx={view.u * 104} cy={4 + view.v * 92} r="2.8" className="half-dot" />}
   </svg>
   return <div className="rally-destination">
-    <figure className={`half-view ${choosingLanding ? 'choosing-landing' : ''} ${me ? 'half-me' : 'half-opponent'}`} aria-label={`${roleName(view.receiver)}${handName(view.hand)}半台，${zoneName(view.zone) || '待选落点'}`} data-recipient={view.receiver} data-zone={view.zone || ''} data-u={view.u ?? ''} data-v={view.v ?? ''}>
+    <figure className={`half-view ${choosingLanding ? 'choosing-landing' : ''} ${me ? 'half-me' : 'half-opponent'}`} aria-label={`${roleName(view.receiver)}${handName(view.hand)}半台，${landingLabel}`} data-recipient={view.receiver} data-zone={view.zone || ''} data-u={view.u ?? ''} data-v={view.v ?? ''}>
       <div className="half-depths">{view.depths.map(depth => <span key={depth}>{depthLabels[depth]}</span>)}</div>
       <div className="half-lanes">{view.lanes.map(lane => <span key={lane}>{laneLabels[lane]}</span>)}</div>
-      {current ? <button className="half-target" type="button" aria-label={`在${roleName(view.receiver)}半台点选落点，当前${zoneName(view.zone) || '未选择'}，方向键微调`} disabled={!ready} onClick={pick} onKeyDown={keydown}>
+      {current ? <button className="half-target" type="button" aria-label={index === 0 && !ready ? landingLabel : `在${roleName(view.receiver)}半台点选落点，当前${selectedZone || '未选择'}，方向键微调`} disabled={!ready} onClick={pick} onKeyDown={keydown}>
         {graphic}{index === 0 && draft.setup.family && <StancePreview draft={draft} ball={ball} receiver={view.receiver}/>}{ready && view.u === null && <Crosshair size={18} className="half-empty-marker" aria-hidden="true" />}
       </button> : <div className="half-target">{graphic}</div>}
-      <strong className="half-zone-name" aria-live={current ? 'polite' : 'off'}>{zoneName(view.zone) || (choosingLanding ? '请点选落点' : '待选落点')}</strong>
+      <strong className="half-zone-name" aria-live={current ? 'polite' : 'off'}>{landingLabel}</strong>
     </figure>
   </div>
 }
