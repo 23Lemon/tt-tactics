@@ -145,8 +145,10 @@ function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
       {current ? <button className="half-target" type="button" aria-label={index === 0 && !ready ? landingLabel : `在${roleName(view.receiver)}半台点选落点，当前${selectedZone || '未选择'}，方向键微调`} disabled={!ready} onClick={pick} onKeyDown={keydown}>
         {table}
       </button> : <div className="half-target">{table}</div>}
-      <strong className="half-zone-name" aria-live={current ? 'polite' : 'off'}>{landingLabel}</strong>
-      <HoldCourtButton/>
+      <div className="half-caption">
+        <strong className="half-zone-name" aria-live={current ? 'polite' : 'off'}>{landingLabel}</strong>
+        <HoldCourtButton/>
+      </div>
     </figure>
   </div>
 }
