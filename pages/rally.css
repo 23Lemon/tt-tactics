@@ -31,9 +31,9 @@
 .rally-destination{position:relative;z-index:1}
 .rally-card{position:relative;z-index:3}
 
-.half-view .half-zone-name{grid-column:2;grid-row:3;min-width:0}
-.half-me .half-target,.half-me .half-depths,.half-me .half-zone-name{width:calc(100% + var(--rally-table-join))}
-.half-opponent .half-target,.half-opponent .half-depths,.half-opponent .half-zone-name{grid-column:1;width:calc(100% + var(--rally-table-join));margin-left:calc(-1 * var(--rally-table-join))}
+.half-caption{grid-column:2;grid-row:3;display:grid;justify-items:center;gap:3px;min-width:0}
+.half-me :is(.half-target,.half-depths,.half-caption){width:calc(100% + var(--rally-table-join))}
+.half-opponent :is(.half-target,.half-depths,.half-caption){grid-column:1;width:calc(100% + var(--rally-table-join));margin-left:calc(-1 * var(--rally-table-join))}
 @media(max-width:350px){.rally-app{--rally-gutter:25px;--rally-table-pad:1px}}
 
 /* Direction stays legible over both the light mesh and the dark table. */
@@ -55,17 +55,18 @@
 .rally-turn .rally-destination{z-index:auto}
 .rally-turn .half-view{position:relative;left:calc(-1 * var(--rally-net-width)/2);transform:none}
 .opposite-half{position:absolute;inset:0;z-index:4;display:block;width:100%;height:100%;overflow:visible;pointer-events:none;opacity:0;transition:opacity 240ms ease}
-.show-stance .opposite-half,.half-view:has(.half-preview-button[aria-pressed=true]) .opposite-half{opacity:1}
+.rally-turn:is(.show-stance,:has(.half-preview-button[aria-pressed=true])) .opposite-half{opacity:1}
 .rally-turn :is(.half-depths,.half-lanes,.half-zone-name,.half-empty-marker,.rally-arrow){transition:opacity 200ms ease}
 .rally-turn:is(.show-stance,:has(.half-preview-button[aria-pressed=true])) :is(.half-depths,.half-lanes,.half-zone-name,.half-empty-marker,.rally-arrow){opacity:0}
 .half-dot-invalid{fill:#f8ddd4;stroke:#a84f3c}
-.half-preview-button{grid-column:2;grid-row:4;justify-self:center;min-height:32px;padding:3px 9px;border:1px solid var(--rally-line);border-radius:5px;background:transparent;color:var(--rally-accent);font-size:12px;line-height:1.2;touch-action:none;user-select:none;-webkit-touch-callout:none;transition:background-color 160ms ease,border-color 160ms ease}
-.half-opponent .half-preview-button{grid-column:1}
+.half-preview-button{min-height:32px;padding:3px 9px;border:1px solid var(--rally-line);border-radius:5px;background:transparent;color:var(--rally-accent);font-size:12px;line-height:1.2;touch-action:none;user-select:none;-webkit-touch-callout:none;transition:background-color 160ms ease,border-color 160ms ease}
 .half-preview-button:is(:hover,[aria-pressed=true]){background:var(--rally-selected);border-color:var(--rally-hard)}
 .half-preview-button:focus-visible{outline:2px solid var(--rally-accent);outline-offset:2px}
 @media(pointer:coarse){.half-preview-button{min-height:44px}}
 .rally-toast{width:max-content}
+.rally-turn > .rally-card,
 .rally-serve-turn :is(.rally-field,.rally-serve-settings summary,.rally-advanced-fields label:has(select)){transition:opacity 220ms ease,filter 220ms ease}
+.rally-turn:has(.half-preview-button[aria-pressed=true]) > .rally-card,
 .show-stance :is(.rally-field,.rally-serve-settings summary,.rally-advanced-fields label:has(select)){opacity:.14;filter:blur(2px)}
 .rally-serve-settings{border:0;margin-top:10px}
 .rally-serve-settings summary{display:flex;align-items:center;gap:6px;min-height:46px;padding:6px 7px;border:1px solid var(--rally-hard);border-radius:5px;background:var(--rally-selected);color:var(--rally-accent);list-style:none;cursor:pointer}
