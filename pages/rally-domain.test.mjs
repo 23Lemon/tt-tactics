@@ -102,6 +102,29 @@ test('落点保留连续位置，两个同区点击不会吸附到格子中心',
   assert.equal(base.setup.point, undefined)
 })
 
+test('两种模式都提示贴网落点无法实现，并在重新点选后恢复推进', () => {
+  for (const mode of ['serve', 'receive']) {
+    const draft = updateServe(createDraft(mode), { family: 'pendulum', spin: 'side', position: -.96 })
+    const fromNet = depth => mode === 'serve' ? depth : 1 - depth
+    const touchingNet = moveLanding(draft, 0, fromNet(.008), .52)
+    assert.match(getStatus(touchingNet).error, /会碰网.*往端线/)
+    assert.equal(getStatus(touchingNet).ready, false)
+    assert.equal(goTo(touchingNet, 1), touchingNet)
+
+    const missingTarget = moveLanding(touchingNet, 0, fromNet(.015), .52)
+    assert.match(getStatus(missingTarget).error, /当前设置下.*往端线/)
+    assert.equal(getAnalysis(missingTarget)[0].valid, false)
+
+    const corrected = moveLanding(missingTarget, 0, fromNet(.25), .52)
+    assert.ok(getStatus(corrected).ready)
+    assert.equal(getStatus(corrected).error, '')
+    const reply = chooseStroke(corrected, 1, getSuggestions(corrected, 1)[0])
+    const nearNetReturn = moveLanding(reply, 1, 1 - fromNet(.008), .52)
+    assert.equal(getStatus(nearNetReturn).invalidIndex, 1)
+    assert.match(getStatus(nearNetReturn).error, /会碰网.*往端线/)
+  }
+})
+
 test('无自定义坐标时半台圆点使用原引擎 targetPoint，而非演示网格中心', () => {
   const draft = opening()
   const view = getLandingView(draft, 0)

@@ -60,8 +60,7 @@ function TableSurface({ start = 0, row = -1, column = -1 }) {
   </>
 }
 
-function StancePreview({ draft, ball, receiver }) {
-  const actor = actorAt(draft, 0)
+function OppositeHalf({ origin, ball, receiver }) {
   const offset = receiver === 'me' ? 104 : 0
   const start = receiver === 'me' ? 104 : -104
   const edge = receiver === 'me' ? 208 : -104
@@ -69,18 +68,39 @@ function StancePreview({ draft, ball, receiver }) {
     const [x, y] = positionOnTable(point)
     return [x + offset, y]
   }
-  const [x, y] = xy(serveOrigin(draft.setup, actor, draft))
+  const contact = origin && xy(origin)
   const track = ball?.points?.map(state => xy(state.p)) ?? []
   const bounce = ball?.serviceBounce && xy(ball.serviceBounce)
   const clip = 'stance' + useId().replace(/[^a-zA-Z0-9_-]/g, '')
-  return <svg className="stance-extension" viewBox="0 0 104 100" aria-hidden="true">
+  return <svg className="opposite-half" viewBox="0 0 104 100" aria-hidden="true">
     <defs><clipPath id={clip}><rect x={start} y="4" width="104" height="92"/></clipPath></defs>
     <TableSurface start={start}/>
     {track.length > 1 && <polyline points={track.join(' ')} clipPath={`url(#${clip})`} fill="none" stroke="#ffd686" strokeWidth="1.35"/>}
     {bounce && <circle cx={bounce[0]} cy={bounce[1]} r="1.9" fill="#ffd686"/>}
-    <path d={`M${edge} ${y}H${x}`} stroke="#b78c4e" strokeWidth="1.25" strokeDasharray="1.5 1"/>
-    <circle cx={x} cy={y} r="3.4" fill="#f9b957" stroke="#324338" strokeWidth="1.1"/>
+    {contact && <><path d={`M${edge} ${contact[1]}H${contact[0]}`} stroke="#b78c4e" strokeWidth="1.25" strokeDasharray="1.5 1"/>
+      <circle cx={contact[0]} cy={contact[1]} r="3.4" fill="#f9b957" stroke="#324338" strokeWidth="1.1"/></>}
   </svg>
+}
+
+function HoldCourtButton() {
+  const [holding, setHolding] = useState(false)
+  function holdPointer(event) {
+    if (event.button !== 0 || !event.isPrimary) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setHolding(true)
+  }
+  function holdKey(event, active) {
+    if (event.key !== ' ' && event.key !== 'Enter') return
+    event.preventDefault()
+    setHolding(active)
+  }
+  return <button type="button" className="half-preview-button" aria-pressed={holding}
+    onPointerDown={holdPointer} onPointerUp={() => setHolding(false)} onPointerCancel={() => setHolding(false)}
+    onLostPointerCapture={() => setHolding(false)} onBlur={() => setHolding(false)}
+    onContextMenu={event => event.preventDefault()}
+    onKeyDown={event => holdKey(event, true)} onKeyUp={event => holdKey(event, false)}>
+    按住看全台
+  </button>
 }
 
 function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
@@ -97,6 +117,7 @@ function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
   }
   const row = view.zone ? view.lanes.indexOf(view.zone.split('-')[0]) : -1
   const column = view.zone ? view.depths.indexOf(view.zone.split('-')[1]) : -1
+  const origin = index === 0 && draft.setup.family ? serveOrigin(draft.setup, actorAt(draft, 0), draft) : null
   function pick(event) {
     if (!ready) return
     if (event.detail === 0) { onPoint(index, view.u ?? .5, view.v ?? .5); return }
@@ -114,16 +135,18 @@ function HalfTable({ draft, index, onPoint, ball, choosingLanding }) {
     <TableSurface row={row} column={column}/>
     <line x1={me ? 104 : 0} y1="1" x2={me ? 104 : 0} y2="99" className="half-net" vectorEffect="non-scaling-stroke" />
     <RallyFlight ball={ball} receiver={view.receiver}/>
-    {view.u !== null && <circle cx={view.u * 104} cy={4 + view.v * 92} r="2.8" className="half-dot" />}
+    {view.u !== null && <circle cx={view.u * 104} cy={4 + view.v * 92} r="2.8" className={`half-dot${ball && !ball.valid ? ' half-dot-invalid' : ''}`} />}
   </svg>
+  const table = <>{graphic}<OppositeHalf origin={origin} ball={ball} receiver={view.receiver}/>{ready && view.u === null && <Crosshair size={18} className="half-empty-marker" aria-hidden="true" />}</>
   return <div className="rally-destination">
     <figure className={`half-view ${choosingLanding ? 'choosing-landing' : ''} ${me ? 'half-me' : 'half-opponent'}`} aria-label={`${roleName(view.receiver)}${handName(view.hand)}半台，${landingLabel}`} data-recipient={view.receiver} data-zone={view.zone || ''} data-u={view.u ?? ''} data-v={view.v ?? ''}>
       <div className="half-depths">{view.depths.map(depth => <span key={depth}>{depthLabels[depth]}</span>)}</div>
       <div className="half-lanes">{view.lanes.map(lane => <span key={lane}>{laneLabels[lane]}</span>)}</div>
       {current ? <button className="half-target" type="button" aria-label={index === 0 && !ready ? landingLabel : `在${roleName(view.receiver)}半台点选落点，当前${selectedZone || '未选择'}，方向键微调`} disabled={!ready} onClick={pick} onKeyDown={keydown}>
-        {graphic}{index === 0 && draft.setup.family && <StancePreview draft={draft} ball={ball} receiver={view.receiver}/>}{ready && view.u === null && <Crosshair size={18} className="half-empty-marker" aria-hidden="true" />}
-      </button> : <div className="half-target">{graphic}</div>}
+        {table}
+      </button> : <div className="half-target">{table}</div>}
       <strong className="half-zone-name" aria-live={current ? 'polite' : 'off'}>{landingLabel}</strong>
+      <HoldCourtButton/>
     </figure>
   </div>
 }
@@ -266,7 +289,12 @@ export default function RallyWorkbench() {
   useEffect(() => { refreshRecords(); return subscribeRoutines(refreshRecords) }, [refreshRecords])
   useEffect(() => { if (!message) return; const id = setTimeout(() => setMessage(''), 4500); return () => clearTimeout(id) }, [message])
   function update(transform) { setDrafts(old => ({ ...old, [mode]: transform(old[mode]) })); setAdjustment('read'); setMessage('') }
-  function point(index, u, v) { update(value => moveLanding(value, index, u, v)) }
+  function point(index, u, v) {
+    const nextDraft = moveLanding(draft, index, u, v)
+    const nextStatus = getStatus(nextDraft)
+    update(() => nextDraft)
+    if (nextStatus.invalidIndex === index) setMessage(nextStatus.error)
+  }
   function choose(option) { try { const nextDraft = chooseStroke(draft, draft.active, option); setDrafts(old => ({ ...old, [mode]: nextDraft })); setAdjustment('read'); setMessage(''); setDialog(null) } catch (error) { setMessage(error.message) } }
   function changeMode(value) { setMode(value); setDialog(null); setServePart(null); setAdjustment('read'); setStancePreview(null) }
   function changeHands(patch) { setDrafts(old => Object.fromEntries(Object.entries(old).map(([key, value]) => [key, setHands(value, key === mode ? patch : Object.hasOwn(patch, 'myHand') ? { myHand: patch.myHand } : {})]))); setServePart(null) }
